@@ -60,6 +60,7 @@ initial_skus = [x.strip().upper() for x in re.split(r'[,/\s]+', new_items_input)
 # --- [3. 파일 업로더] ---
 uploaded_files = st.file_uploader("📥 패킹리스트 엑셀 업로드 (다중 파일 지원)", type=["xlsx", "xls"], accept_multiple_files=True)
 
+
 def parse_all_excel(files):
     all_boxes = []
     size_candidates = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', 'FREE']
@@ -140,13 +141,17 @@ def parse_all_excel(files):
                             match = re.search(r'(MUN|DJ)\s*\d+[A-Z]*', c_up)
                             cur_prod = match.group(0).replace(" ", "") if match else c_val
                         
-                        color_keys = ['BK', 'BLACK', 'WHITE', 'WH', 'GY', 'GRAY', 'KH', 'KHAKI', 'BR', 'BROWN', 'CR', 'CREAM', 'CHARCOAL', 'CH', 'BLUE', 'DEEP', 'WBL', 'VB', 'LG', 'KB', 'NAVY', 'BEIGE', 'OATMEAL', 'IVORY']
+                        color_keys = ['BK', 'BLACK', 'WHITE', 'WH', 'GY', 'GRAY', 'KH', 'KHAKI', 'BR', 'BROWN', 'CR', 'CREAM', 'CHARCOAL', 'CH', 'BLUE', 'DEEP', 'WBL', 'VB', 'LG', 'KB', 'NAVY', 'BEIGE', 'OATMEAL', 'IVORY', 'STRIPE', 'OFF']
                         for k in color_keys:
                             if k in c_up:
                                 for token in c_val.replace(',', ' ').split():
                                     if token.upper() in color_keys:
                                         cur_color = token.upper()
                                         break
+                                # If compound color like STRIPE GRAY or OFF WHITE
+                                if 'STRIPE GRAY' in c_up: cur_color = 'STRIPE GRAY'
+                                if 'OFF WHITE' in c_up: cur_color = 'OFF WHITE'
+                                if 'LIGHT BLUE' in c_up: cur_color = 'LIGHT BLUE'
 
                     pkg_val = str(row.iloc[pkg_col]).strip() if pkg_col < len(row.values) and pd.notna(row.iloc[pkg_col]) else ""
                     
@@ -200,13 +205,19 @@ def parse_all_excel(files):
                         
                     if pd.notna(c_val) and not any(k in str(c_val) for k in ['총', '박스', '합', '合计']):
                         c_up = str(c_val).strip().upper()
-                        color_keys = ['BK', 'BLACK', 'WHITE', 'WH', 'GY', 'GRAY', 'KH', 'KHAKI', 'BR', 'BROWN', 'CR', 'CREAM', 'CHARCOAL', 'CH', 'BLUE', 'DEEP', 'WBL', 'VB', 'LG', 'KB', 'NAVY', 'BEIGE', 'OATMEAL', 'IVORY']
-                        for k in color_keys:
-                            if k in c_up:
-                                for token in c_up.replace(',', ' ').split():
-                                    if token in color_keys:
-                                        cur_color = token
-                                        break
+                        # Allow multi-word colors
+                        if 'STRIPE GRAY' in c_up: cur_color = 'STRIPE GRAY'
+                        elif 'OFF WHITE' in c_up: cur_color = 'OFF WHITE'
+                        elif 'LIGHT BLUE' in c_up: cur_color = 'LIGHT BLUE'
+                        elif 'DEEP BLUE' in c_up: cur_color = 'DEEP BLUE'
+                        else:
+                            color_keys = ['BK', 'BLACK', 'WHITE', 'WH', 'GY', 'GRAY', 'KH', 'KHAKI', 'BR', 'BROWN', 'CR', 'CREAM', 'CHARCOAL', 'CH', 'BLUE', 'WBL', 'VB', 'LG', 'KB', 'NAVY', 'BEIGE', 'OATMEAL', 'IVORY']
+                            for k in color_keys:
+                                if k in c_up:
+                                    for token in c_up.replace(',', ' ').split():
+                                        if token in color_keys:
+                                            cur_color = token
+                                            break
 
                     if not pd.notna(q_val):
                         continue
@@ -220,6 +231,7 @@ def parse_all_excel(files):
                                 all_boxes.append({'pkg': pkg_str, 'prod': cur_prod, 'color': cur_color, 'items': [{'size': sz, 'qty': q_int}]})
                                 prev_pkg = pkg_str
                             else:
+                                # pkg_val is missing. If prev_pkg exists, it's a mix. If not, it's a new box.
                                 if prev_pkg and all_boxes:
                                     all_boxes[-1]['items'].append({'size': sz, 'qty': q_int})
                                 else:
@@ -230,7 +242,7 @@ def parse_all_excel(files):
                         pass
                         
         except Exception as e:
-            st.error(f"파일 파싱 중 예외 발생 ({f.name}): {e}")
+            print(f"Error: {e}")
 
     return all_boxes
 
