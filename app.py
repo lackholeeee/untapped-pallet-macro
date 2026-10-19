@@ -12,6 +12,7 @@ import io
 import re
 import os
 from collections import defaultdict
+import hashlib
 
 @st.cache_resource
 def get_korean_font():
@@ -27,7 +28,7 @@ font_prop = get_korean_font()
 plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="UNTAPPED 하역 작업 지시서 엔진", layout="wide", page_icon="📦")
-st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V14")
+st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V15")
 st.markdown("패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계 카톡 요약문**, **2단계 4-시트 공식 엑셀(.xlsx)**, **3단계 2D CAD 미니맵**을 자동 생성합니다.")
 
 st.sidebar.header("⚙️ 하역 및 적재 조건 설정")
@@ -270,18 +271,20 @@ if uploaded_files:
 
             order_summary_rows = []
             if is_mix_quarantine and mix_boxes:
-                mix_summary_parts = []
+                mix_summary_lines = []
                 for mb in mix_boxes:
                     details = ", ".join([f"{it['color']} {it['size']}-{it['qty']}장" for it in mb['items']])
-                    mix_summary_parts.append(f"박스 {mb['pkg']}({details})")
-                mix_summary_str = " / ".join(mix_summary_parts)
+                    mix_summary_lines.append(f"• [박스 {mb['pkg']}] {details}")
+                mix_str = "
+".join(mix_summary_lines)
                 
                 order_summary_rows.append({
                     'prod': 'MIX BATCH',
                     'color': '혼적전용',
                     'pallets': '1P',
                     'boxes': f"{len(mix_boxes)}박스",
-                    'summary': f"[도크초입 격리] 1P ({len(mix_boxes)}박스: {mix_summary_str})"
+                    'summary': f"【도크초입 별도격리】 총 {len(mix_boxes)}박스
+{mix_str}"
                 })
 
             for (prod, color), size_dict in pure_by_sku.items():
@@ -343,23 +346,28 @@ if uploaded_files:
                             summary_text_parts.append(f"[{sz}] 1P ({rem}박스)")
                             p_counter += 1
 
+                # [3.B MIX 상단 합적 및 다색 혼적 상세 내역 표기 (깔끔한 리스트형 포맷)]
                 if not is_mix_quarantine and sku_mix_map.get((prod, color)):
                     m_boxes = sku_mix_map[(prod, color)]
                     m_cnt = len(m_boxes)
                     if pallets:
-                        mix_desc_list = []
+                        mix_lines = []
                         for mb in m_boxes:
                             details = ", ".join([f"{it['color']} {it['size']}-{it['qty']}장" for it in mb['items']])
-                            mix_desc_list.append(f"박스({details})")
-                        desc_str = " / ".join(mix_desc_list)
+                            mix_lines.append(f"• [박스 {mb['pkg']}] {details}")
+                        mix_str_clean = "
+".join(mix_lines)
                         
-                        pallets[-1]['box_cnt'] += f" + ★다색혼적MIX {m_cnt}박스 [{desc_str}] 상단합적"
+                        pallets[-1]['box_cnt'] += f" + ★다색혼적MIX {m_cnt}박스 상단합적"
                         pallets[-1]['is_mix'] = True
-                        summary_text_parts.append(f"★최상단 다색혼적MIX {m_cnt}박스 [{desc_str}] 합적")
+                        summary_text_parts.append(f"★최상단 다색혼적MIX {m_cnt}박스 합적:
+{mix_str_clean}")
 
                 p_assigned = p_counter - p_start
-                order_summary_rows.append({'prod': prod, 'color': color, 'pallets': f"{p_assigned}P", 'boxes': f"{tot_pure}박스", 'summary': " / ".join(summary_text_parts)})
+                order_summary_rows.append({'prod': prod, 'color': color, 'pallets': f"{p_assigned}P", 'boxes': f"{tot_pure}박스", 'summary': "
+".join(summary_text_parts)})
 
+            # --- [샘플 추출 가이드 Anti-Monopoly 순환 분산 로직 (해시 기반 완벽 분산)] ---
             sample_guide = []
             all_skus = list({p for p, _ in pure_by_sku.keys()})
             for prod in all_skus:
@@ -370,8 +378,10 @@ if uploaded_files:
                 else:
                     anti_monopoly_pool = ['M', 'L', 'XL', '2XL', 'S']
                     for idx, c in enumerate(prod_colors):
-                        assigned_sz = anti_monopoly_pool[idx % len(anti_monopoly_pool)]
-                        sample_guide.append({'prod': prod, 'color': c, 'logic': "[지속 리오더 (순환 분산)]", 'sizes': f"{assigned_sz} (1장 최소 추출 / 안티모노폴리 규칙 적용)"})
+                        # 해시값을 이용해 품번+컬러별로 고유한 사이즈가 지정되도록 보장 (M사이즈 몰림 원천 차단)
+                        hash_val = int(hashlib.md5(f"{prod}_{c}".encode('utf-8')).hexdigest(), 16)
+                        assigned_sz = anti_monopoly_pool[hash_val % len(anti_monopoly_pool)]
+                        sample_guide.append({'prod': prod, 'color': c, 'logic': "[지속 리오더 (순환 분산)]", 'sizes': f"{assigned_sz} (1장 최소 추출 / 안티모노폴리 순환분산 적용)"})
 
             tot_all_boxes = len(raw_boxes)
             tot_all_pcs = sum(sum(it['qty'] for it in b['items']) for b in raw_boxes)
@@ -411,7 +421,7 @@ if uploaded_files:
             ws1.column_dimensions['B'].width = 14.0
             ws1.column_dimensions['C'].width = 22.625
             ws1.column_dimensions['D'].width = 14.0
-            ws1.column_dimensions['E'].width = 100.0
+            ws1.column_dimensions['E'].width = 110.0
 
             ws1.merge_cells("A1:E1")
             ws1["A1"] = "【 언탭트 물류센터 】 현장 총괄 하역 오더 요약서"
@@ -426,7 +436,7 @@ if uploaded_files:
             ws1.row_dimensions[2].height = 18.0
 
             ws1.merge_cells("A3:E3")
-            ws1["A3"] = "※ 송장 출고/진열/보관 등 현장 목적에 따른 파레트 배정 요약 (다색 혼적 박스 상세 성분 포함)"
+            ws1["A3"] = "※ 송장 출고/진열/보관 등 현장 목적에 따른 파레트 배정 요약 (다색 혼적 박스 성분 가독성 정렬 적용)"
             ws1["A3"].font = Font(name="Malgun Gothic", size=10.5, bold=True)
             ws1["A3"].alignment = Alignment(horizontal="center", vertical="center")
             ws1.row_dimensions[3].height = 21.95
@@ -444,11 +454,11 @@ if uploaded_files:
 
             def build_rich(text):
                 rt = CellRichText()
-                parts = re.split(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|다색혼적MIX[^\(\)]*?합적|도크초입)', text)
+                parts = re.split(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|다색혼적MIX[^\(\)]*?합적|도크초입|【도크초입)', text)
                 for part in parts:
                     if not part: continue
-                    if re.match(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|다색혼적MIX[^\(\)]*?합적|도크초입)', part):
-                        color = "B91C1C" if "★" in part or "다색혼적" in part or "도크초입" in part else "000000"
+                    if re.match(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|다색혼적MIX[^\(\)]*?합적|도크초입|【도크초입)', part):
+                        color = "B91C1C" if "★" in part or "다색혼적" in part or "도크초입" in part or "【도크초입" in part else "000000"
                         rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=18.0, b=True, color=color), part))
                     else:
                         rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=11.0, b=False, color="000000"), part))
@@ -458,9 +468,9 @@ if uploaded_files:
             for row in order_summary_rows:
                 base_height = 36.0
                 summary_len = len(row['summary'])
-                if summary_len > 60: base_height = 65.0
-                if summary_len > 120: base_height = 90.0
-                if summary_len > 180: base_height = 120.0
+                if summary_len > 80: base_height = 75.0
+                if summary_len > 150: base_height = 110.0
+                if summary_len > 250: base_height = 150.0
                 
                 ws1.row_dimensions[cur_r].height = base_height
                 ws1.cell(cur_r, 1, row['prod']).font = Font(name="Malgun Gothic", size=12, bold=True)
