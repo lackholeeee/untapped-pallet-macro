@@ -28,7 +28,7 @@ font_prop = get_korean_font()
 plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="UNTAPPED 하역 작업 지시서 엔진", layout="wide", page_icon="📦")
-st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V18")
+st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V22")
 st.markdown("패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계 카톡 요약문**, **2단계 4-시트 공식 엑셀(.xlsx)**, **3단계 2D CAD 미니맵**을 자동 생성합니다.")
 
 st.sidebar.header("⚙️ 하역 및 적재 조건 설정")
@@ -399,7 +399,6 @@ if uploaded_files:
                 p_assigned = p_counter - p_start
                 order_summary_rows.append({'prod': prod, 'color': color, 'pallets': f"{p_assigned}P", 'boxes': f"{tot_pure}박스", 'summary': "\n".join(summary_text_parts)})
 
-            # --- [샘플 추출 가이드: 순환 분산(Round-Robin) 엄격 적용 (L/M 몰림 100% 방지)] ---
             sample_guide = []
             all_skus = list({p for p, _ in pure_by_sku.keys()})
             sample_row_counter = 0
@@ -413,7 +412,6 @@ if uploaded_files:
                         actual_sizes = [s for s in size_order if qty_summary[(prod, c)][s]['pcs'] > 0]
                         if not actual_sizes: actual_sizes = ['M', 'L']
                         
-                        # 순환 분산(Round-Robin) 적용: 행마다 돌아가면서 서로 다른 실존 사이즈가 확실히 선택되도록 보장
                         assigned_sz = actual_sizes[sample_row_counter % len(actual_sizes)]
                         sample_row_counter += 1
                         
@@ -493,16 +491,16 @@ if uploaded_files:
                 c.font = Font(name="Malgun Gothic", size=11, bold=True, color="FFFFFF")
                 c.alignment = Alignment(horizontal="center", vertical="center")
 
-                                                            def build_rich(text):
+            def build_rich(text):
                 rt = CellRichText()
                 parts = re.split(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|다색혼적MIX[^\(\)]*?합적|도크초입|【도크초입)', text)
                 for part in parts:
-                if not part: continue
-                if re.match(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|다색혼적MIX[^\(\)]*?합적|도크초입|【도크초입)', part):
-                color = "B91C1C" if "★" in part or "다색혼적" in part or "도크초입" in part or "【도크초입" in part else "000000"
-                rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=18.0, b=True, color=color), part))
-                else:
-                rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=11.0, b=False, color="000000"), part))
+                    if not part: continue
+                    if re.match(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|다색혼적MIX[^\(\)]*?합적|도크초입|【도크초입)', part):
+                        color = "B91C1C" if "★" in part or "다색혼적" in part or "도크초입" in part or "【도크초입" in part else "000000"
+                        rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=18.0, b=True, color=color), part))
+                    else:
+                        rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=11.0, b=False, color="000000"), part))
                 return rt
 
             cur_r = 6
