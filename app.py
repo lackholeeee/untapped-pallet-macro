@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import openpyxl
@@ -28,7 +29,7 @@ font_prop = get_korean_font()
 plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="UNTAPPED 하역 작업 지시서 엔진", layout="wide", page_icon="📦")
-st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V15")
+st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V16")
 st.markdown("패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계 카톡 요약문**, **2단계 4-시트 공식 엑셀(.xlsx)**, **3단계 2D CAD 미니맵**을 자동 생성합니다.")
 
 st.sidebar.header("⚙️ 하역 및 적재 조건 설정")
@@ -275,16 +276,14 @@ if uploaded_files:
                 for mb in mix_boxes:
                     details = ", ".join([f"{it['color']} {it['size']}-{it['qty']}장" for it in mb['items']])
                     mix_summary_lines.append(f"• [박스 {mb['pkg']}] {details}")
-                mix_str = "
-".join(mix_summary_lines)
+                mix_str = "\n".join(mix_summary_lines)
                 
                 order_summary_rows.append({
                     'prod': 'MIX BATCH',
                     'color': '혼적전용',
                     'pallets': '1P',
                     'boxes': f"{len(mix_boxes)}박스",
-                    'summary': f"【도크초입 별도격리】 총 {len(mix_boxes)}박스
-{mix_str}"
+                    'summary': f"【도크초입 별도격리】 총 {len(mix_boxes)}박스\n{mix_str}"
                 })
 
             for (prod, color), size_dict in pure_by_sku.items():
@@ -355,17 +354,14 @@ if uploaded_files:
                         for mb in m_boxes:
                             details = ", ".join([f"{it['color']} {it['size']}-{it['qty']}장" for it in mb['items']])
                             mix_lines.append(f"• [박스 {mb['pkg']}] {details}")
-                        mix_str_clean = "
-".join(mix_lines)
+                        mix_str_clean = "\n".join(mix_lines)
                         
                         pallets[-1]['box_cnt'] += f" + ★다색혼적MIX {m_cnt}박스 상단합적"
                         pallets[-1]['is_mix'] = True
-                        summary_text_parts.append(f"★최상단 다색혼적MIX {m_cnt}박스 합적:
-{mix_str_clean}")
+                        summary_text_parts.append(f"★최상단 다색혼적MIX {m_cnt}박스 합적:\n{mix_str_clean}")
 
                 p_assigned = p_counter - p_start
-                order_summary_rows.append({'prod': prod, 'color': color, 'pallets': f"{p_assigned}P", 'boxes': f"{tot_pure}박스", 'summary': "
-".join(summary_text_parts)})
+                order_summary_rows.append({'prod': prod, 'color': color, 'pallets': f"{p_assigned}P", 'boxes': f"{tot_pure}박스", 'summary': "\n".join(summary_text_parts)})
 
             # --- [샘플 추출 가이드 Anti-Monopoly 순환 분산 로직 (해시 기반 완벽 분산)] ---
             sample_guide = []
@@ -378,7 +374,6 @@ if uploaded_files:
                 else:
                     anti_monopoly_pool = ['M', 'L', 'XL', '2XL', 'S']
                     for idx, c in enumerate(prod_colors):
-                        # 해시값을 이용해 품번+컬러별로 고유한 사이즈가 지정되도록 보장 (M사이즈 몰림 원천 차단)
                         hash_val = int(hashlib.md5(f"{prod}_{c}".encode('utf-8')).hexdigest(), 16)
                         assigned_sz = anti_monopoly_pool[hash_val % len(anti_monopoly_pool)]
                         sample_guide.append({'prod': prod, 'color': c, 'logic': "[지속 리오더 (순환 분산)]", 'sizes': f"{assigned_sz} (1장 최소 추출 / 안티모노폴리 순환분산 적용)"})
