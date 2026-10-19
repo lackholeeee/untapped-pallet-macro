@@ -158,17 +158,29 @@ def parse_all_excel(files):
                 cur_prod = "MUN_ITEM"
                 cur_color = "DEFAULT"
                 prev_pkg = None
+                empty_streak = 0
 
                 for r in range(header_row_idx + 1, len(df)):
                     row = df.iloc[r]
                     row_str = " ".join([str(v) for v in row.values if pd.notna(v)])
-                    if any(k in row_str for k in ['박스 총 수량', '옷 총 수량', '총합', '合计', '小计', 'TOTAL']): continue
+                    if any(k in row_str for k in ['박스 총 수량', '옷 총 수량', '총합', '合计', '小计', 'TOTAL']):
+                        continue
                         
                     p_val = row.iloc[col_map['prod']] if 'prod' in col_map and col_map['prod'] < len(row.values) else None
                     c_val = row.iloc[col_map['color']] if 'color' in col_map and col_map['color'] < len(row.values) else None
                     s_val = row.iloc[col_map['size']] if 'size' in col_map and col_map['size'] < len(row.values) else None
                     q_val = row.iloc[col_map['qty']] if 'qty' in col_map and col_map['qty'] < len(row.values) else None
-                    pkg_val = row.iloc[col_map['pkg']] if 'pkg' in col_map and col_map['pkg'] < len(row.values) else None
+                    
+                    pkg_val = None
+                    if 'pkg' in col_map and col_map['pkg'] < len(row.values):
+                        pkg_val = row.iloc[col_map['pkg']]
+                        
+                    if not pd.notna(s_val) and not pd.notna(pkg_val) and not pd.notna(q_val):
+                        empty_streak += 1
+                        if empty_streak >= 3: break
+                        continue
+                    else:
+                        empty_streak = 0
                     
                     if pd.notna(p_val) and str(p_val).strip().upper().startswith(('MUN', 'DJ')):
                         match = re.search(r'(MUN|DJ)\s*\d+[A-Z0-9]*', str(p_val).strip().upper())
