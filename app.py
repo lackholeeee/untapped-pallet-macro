@@ -28,7 +28,7 @@ font_prop = get_korean_font()
 plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="UNTAPPED 하역 작업 지시서 엔진", layout="wide", page_icon="📦")
-st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V22")
+st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V23 (신상 통합 파서 종결판)")
 st.markdown("패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계 카톡 요약문**, **2단계 4-시트 공식 엑셀(.xlsx)**, **3단계 2D CAD 미니맵**을 자동 생성합니다.")
 
 st.sidebar.header("⚙️ 하역 및 적재 조건 설정")
@@ -86,10 +86,12 @@ def parse_all_excel(files):
                     ct_col, color_col, box_cnt_col = 1, 4, 9
                     df[color_col] = df[color_col].ffill()
                     
-                    for r in range(size_row_idx + 1, len(df)):
+                    for r in range(size_row_idx + 2, len(df)):
                         row = df.iloc[r]
                         ct_val = row.iloc[ct_col]
-                        if not pd.notna(ct_val) or str(ct_val).strip() in ['nan', 'BOX', '箱数', '合计', 'TOTAL']: continue
+                        if not pd.notna(ct_val): continue
+                        try: ct_num = int(float(ct_val))
+                        except: break
                             
                         color_val = row.iloc[color_col]
                         color_str = str(color_val).strip().upper() if pd.notna(color_val) else "DEFAULT"
@@ -109,7 +111,7 @@ def parse_all_excel(files):
                                         
                         if row_items:
                             for b_i in range(box_count):
-                                p_name = f"{prod}-{sheet}-CTN-{ct_val}" if box_count == 1 else f"{prod}-{sheet}-CTN-{ct_val}-{b_i+1}"
+                                p_name = f"{prod}-{sheet}-CTN-{ct_num}" if box_count == 1 else f"{prod}-{sheet}-CTN-{ct_num}-{b_i+1}"
                                 all_boxes.append({'pkg': p_name, 'prod': prod, 'items': row_items})
             else:
                 target_sheet = xl.sheet_names[0]
@@ -610,7 +612,7 @@ if uploaded_files:
             lr = 1
             for p_info in pallets:
                 ws3.merge_cells(start_row=lr, start_column=2, end_row=lr, end_column=4)
-                c = ws3.cell(lr, 2, f"【 UNTAPPED 현장 식별표 】 {p_info['p_num']}")
+                c = ws3.cell(lr, 2, f"【 언탭트 현장 식별표 】 {p_info['p_num']}")
                 c.font = Font(name="Malgun Gothic", size=18, bold=True)
                 c.fill = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
                 c.alignment = Alignment(horizontal="center", vertical="center")
