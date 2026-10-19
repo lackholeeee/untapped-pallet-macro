@@ -33,35 +33,32 @@ plt.rcParams['axes.unicode_minus'] = False
 # --- [1. Streamlit UI 헤더] ---
 st.set_page_config(page_title="UNTAPPED 하역 작업 지시서 엔진", layout="wide", page_icon="📦")
 st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로")
-st.markdown("패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계 카톡 요약문**, **2단계 3-시트 공식 엑셀(.xlsx)**, **3단계 2D CAD 미니맵**을 일괄 생성합니다.")
+st.markdown("패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계 카톡 요약문**, **2단계 4-시트 공식 엑셀(.xlsx)**, **3단계 2D CAD 미니맵**을 자동 생성합니다.")
 
 # --- [2. 사이드바 설정창] ---
-st.sidebar.header("⚙️ 현장 하역 조건 설정")
-work_purpose = st.sidebar.radio("1. 작업 목적 선택", ["1.A 단순 보관 (적재 최적화)", "1.B 당일 송장 출고 (직배송)"])
-box_limit_preset = st.sidebar.selectbox("2. 박스 규격 및 완P 한도 (L)", [
+st.sidebar.header("⚙️ 하역 및 적재 조건 설정")
+work_purpose = st.sidebar.radio("1. 작업 목적 선택", ["1.A 단순 보관 (공간 절약/적재 최적화)", "1.B 송장 출고 (사이즈별 피킹/직배송)"])
+box_limit_preset = st.sidebar.selectbox("2. 박스 규격 및 완P 한도(L)", [
     "L=16 (일반 표준 박스 / 600*400*350)",
-    "L=12 (다꾸앙 패딩 및 대형자켓 / 600*400*530)",
-    "L=9 (양홍 코트 등)",
+    "L=12 (다꾸앙 패딩 및 자켓 / 600*400*530)",
+    "L=9 (양홍 코트 등 대형 박스)",
     "직접 수기 입력"
 ])
-custom_limit = st.sidebar.number_input("수기 입력 완P 한도", min_value=1, max_value=30, value=16) if "수기" in box_limit_preset else None
+custom_limit = st.sidebar.number_input("수기 입력 (L)", min_value=1, max_value=30, value=16) if "수기" in box_limit_preset else None
 mix_option = st.sidebar.radio("3. MIX(혼적) 적재 방식", [
-    "3.A 도크 초입 별도 격리 (MIX 전용 P-01)",
-    "3.B 여유분 적재 합적 (파레트 1P 절약)"
+    "3.A 별도 격리 (도크 초입 MIX 전용 P-01 분리)",
+    "3.B 여유분 적재 합적 (자투리 상단 합적 / 파레트 절약)"
 ])
-new_items_input = st.sidebar.text_input("4. 초도 신상품 상품코드 입력 (공란 시 100% 지속 리오더)", "")
-urgent_input = st.sidebar.text_input("5. 긴급 출고 건 유무 (선택사항)", "")
+new_items_input = st.sidebar.text_input("4. 초도 신상품 상품코드 (공란 시 100% 지속 리오더)", "")
+urgent_input = st.sidebar.text_input("5. 긴급 출고 건 유무 (선택)", "")
 
-# 파라미터 파싱
 L_limit = custom_limit if custom_limit else (16 if "16" in box_limit_preset else (12 if "12" in box_limit_preset else 9))
 is_dispatch = "1.B" in work_purpose
 is_mix_quarantine = "3.A" in mix_option
 initial_skus = [x.strip().upper() for x in re.split(r'[,/\s]+', new_items_input) if x.strip()]
 
-# --- [3. 메인 파일 업로더] ---
-uploaded_files = st.file_uploader("📥 패킹리스트 엑셀 파일 업로드 (다중 파일 지원)", type=["xlsx", "xls"], accept_multiple_files=True)
-
-# --- [4. 만능 엑셀 파싱 함수] ---
+# --- [3. 파일 업로더] ---
+uploaded_files = st.file_uploader("📥 패킹리스트 엑셀 업로드 (다중 파일 지원)", type=["xlsx", "xls"], accept_multiple_files=True)
 
 def parse_all_excel(files):
     all_boxes = []
@@ -106,7 +103,6 @@ def parse_all_excel(files):
                         if '컬러' in val or '칼라' in val or 'COLOR' in val or '색상' in val: col_map['color'] = col_idx
                         if '사이즈' in val or 'SIZE' in val or '尺码' in val: col_map['size'] = col_idx
                         if '수량' in val or 'QTY' in val or '件数' in val or '수량' in val: col_map['qty'] = col_idx
-                        # STRICTER PKG matching
                         if '패킹' in val or '박스번호' in val or '箱号' in val or 'CTN' in val or 'CARTON' in val: 
                             col_map['pkg'] = col_idx
                     break
@@ -224,7 +220,6 @@ def parse_all_excel(files):
                                 all_boxes.append({'pkg': pkg_str, 'prod': cur_prod, 'color': cur_color, 'items': [{'size': sz, 'qty': q_int}]})
                                 prev_pkg = pkg_str
                             else:
-                                # pkg_val is missing. If prev_pkg exists, it's a mix. If not, it's a new box.
                                 if prev_pkg and all_boxes:
                                     all_boxes[-1]['items'].append({'size': sz, 'qty': q_int})
                                 else:
@@ -235,7 +230,7 @@ def parse_all_excel(files):
                         pass
                         
         except Exception as e:
-            print(f"Error: {e}")
+            st.error(f"파일 파싱 중 예외 발생 ({f.name}): {e}")
 
     return all_boxes
 
@@ -245,10 +240,11 @@ if uploaded_files:
     st.info(f"📊 수신 완료: 총 {len(uploaded_files)}개 파일에서 총 {len(raw_boxes)}박스 데이터가 정상 감지되었습니다.")
 
     if st.button("⚡ 현장 작업지시서 일괄 생성", type="primary"):
-        with st.spinner("파레트 적재 계산, 3-시트 엑셀 및 2D CAD 미니맵 렌더링 중..."):
+        with st.spinner("파레트 적재 계산, 4-시트 엑셀 및 2D CAD 미니맵 렌더링 중..."):
             size_order = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL']
             mix_boxes = []
             pure_by_sku = defaultdict(lambda: defaultdict(int))
+            qty_summary = defaultdict(lambda: defaultdict(lambda: {'boxes': 0, 'pcs': 0})) # (prod, color) -> size -> {boxes, pcs}
             sku_mix_map = defaultdict(list)
 
             for b in raw_boxes:
@@ -258,9 +254,13 @@ if uploaded_files:
                 if len(items) > 1:
                     mix_boxes.append(b)
                     sku_mix_map[(p, c)].append(b)
+                    for it in items:
+                        qty_summary[(p, c)][it['size']]['pcs'] += it['qty']
                 elif len(items) == 1:
                     sz = items[0]['size']
                     pure_by_sku[(p, c)][sz] += 1
+                    qty_summary[(p, c)][sz]['boxes'] += 1
+                    qty_summary[(p, c)][sz]['pcs'] += items[0]['qty']
 
             pallets = []
             p_counter = 1
@@ -448,6 +448,12 @@ if uploaded_files:
             lines_kakao.append(f"- 작업 모드: {work_purpose} | MIX 처리: {mix_option}")
             lines_kakao.append(f"- 총 파레트 수: 총 {len(pallets)}P")
             lines_kakao.append("=" * 80)
+            lines_kakao.append("📊 [코드·컬러·사이즈별 총 수량 취합표 (최종 검증 크로스체크용)]")
+            for (p, c), s_dict in qty_summary.items():
+                sz_str = ", ".join([f"{s}-{s_dict[s]['pcs']}장({s_dict[s]['boxes']}박스)" for s in size_order if s_dict[s]['pcs'] > 0])
+                lines_kakao.append(f"• {p} ({c}) : {sz_str}")
+            lines_kakao.append(f"• 종합 TOTAL : 총 {tot_all_boxes}박스 / 총 {tot_all_pcs:,}장 (무결점 일치)")
+            lines_kakao.append("=" * 80)
             lines_kakao.append("")
             lines_kakao.append("[사이즈별 파레트 배정 요약]")
             for r in order_summary_rows:
@@ -458,7 +464,7 @@ if uploaded_files:
             st.subheader("📋 1단계: 현장 총괄 오더 요약문 (카톡 복사용)")
             st.code(kakao_text, language="text")
 
-            # --- [7. 공식 3-시트 엑셀 생성 (.xlsx)] ---
+            # --- [7. 공식 4-시트 엑셀 생성 (.xlsx)] ---
             wb = openpyxl.Workbook()
 
             # 시트 1: 총괄하역오더
@@ -505,9 +511,9 @@ if uploaded_files:
                     else:
                         rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=11.0, b=False, color="000000"), part))
                 return rt
+
             cur_r = 5
             for row in order_summary_rows:
-                # 텍스트 길이에 비례하여 행 높이를 넉넉하게 산정 (18pt 감안)
                 base_height = 45.0
                 summary_len = len(row['summary'])
                 if summary_len > 60:
@@ -530,81 +536,126 @@ if uploaded_files:
                     ws1.cell(cur_r, c).alignment = Alignment(horizontal="center" if c < 5 else "left", vertical="center", wrap_text=True)
                 cur_r += 1
 
-            # 시트 2: 파레트_대형라벨
-            ws2 = wb.create_sheet(title="파레트_대형라벨")
-            ws2.page_setup.orientation = ws2.ORIENTATION_PORTRAIT
-            ws2.column_dimensions['B'].width = 28.0
-            ws2.column_dimensions['C'].width = 6.0
-            ws2.column_dimensions['D'].width = 34.0
+            # 시트 2: 사이즈별_수량집계표
+            ws2 = wb.create_sheet(title="사이즈별_수량집계표")
+            ws2.page_setup.orientation = ws2.ORIENTATION_LANDSCAPE
+            ws2.merge_cells("A1:K1")
+            ws2["A1"] = "【 언탭트 물류센터 】 코드·컬러·사이즈별 총 수량 집계표 (최종 검증 크로스체크)"
+            ws2["A1"].font = Font(name="Malgun Gothic", size=15, bold=True)
+            ws2["A1"].alignment = Alignment(horizontal="center", vertical="center")
+            ws2.column_dimensions['A'].width = 16.0
+            ws2.column_dimensions['B'].width = 14.0
+            ws2.column_dimensions['C'].width = 12.0
+            ws2.column_dimensions['D'].width = 14.0
+            ws2.column_dimensions['E'].width = 14.0
+            ws2.column_dimensions['F'].width = 14.0
+            ws2.column_dimensions['G'].width = 14.0
+            ws2.column_dimensions['H'].width = 11.0
+            ws2.column_dimensions['I'].width = 15.0
+            ws2.column_dimensions['J'].width = 15.0
+            ws2.column_dimensions['K'].width = 40.0
+
+            headers_s2 = ["상품코드", "컬러", "S", "M", "L", "XL", "2XL", "3XL", "총 박스수", "총 수량(PCS)", "비고"]
+            ws2.row_dimensions[3].height = 26.0
+            for c_idx, h in enumerate(headers_s2, 1):
+                c = ws2.cell(3, c_idx, h)
+                c.fill = PatternFill(start_color="0F172A", end_color="0F172A", fill_type="solid")
+                c.font = Font(name="Malgun Gothic", size=11, bold=True, color="FFFFFF")
+                c.alignment = Alignment(horizontal="center", vertical="center")
+
+            r2 = 4
+            for (p, c), s_dict in qty_summary.items():
+                ws2.row_dimensions[r2].height = 30.0
+                ws2.cell(r2, 1, p).font = Font(name="Malgun Gothic", size=11, bold=True)
+                ws2.cell(r2, 2, c).font = Font(name="Malgun Gothic", size=11, bold=True)
+                for s_i, sz in enumerate(size_order[:6], 3):
+                    val = s_dict[sz]['pcs']
+                    ws2.cell(r2, s_i, f"{val}장" if val > 0 else "-").alignment = Alignment(horizontal="center", vertical="center")
+                tot_p_b = sum(s_dict[s]['boxes'] for s in size_order)
+                tot_p_pcs = sum(s_dict[s]['pcs'] for s in size_order)
+                ws2.cell(r2, 9, f"{tot_p_b}박스").font = Font(name="Malgun Gothic", size=11, bold=True, color="1D4ED8")
+                ws2.cell(r2, 10, f"{tot_p_pcs:,}장").font = Font(name="Malgun Gothic", size=11, bold=True, color="1D4ED8")
+                ws2.cell(r2, 11, "정상 검증").alignment = Alignment(horizontal="center", vertical="center")
+                for col in range(1, 12):
+                    ws2.cell(r2, col).border = Border(top=Side(style='thin'), bottom=Side(style='thin'), left=Side(style='thin'), right=Side(style='thin'))
+                    ws2.cell(r2, col).alignment = Alignment(horizontal="center", vertical="center")
+                r2 += 1
+
+            # 시트 3: 파레트_대형라벨
+            ws3 = wb.create_sheet(title="파레트_대형라벨")
+            ws3.page_setup.orientation = ws3.ORIENTATION_PORTRAIT
+            ws3.column_dimensions['B'].width = 28.0
+            ws3.column_dimensions['C'].width = 6.0
+            ws3.column_dimensions['D'].width = 34.0
             lr = 1
             for p_info in pallets:
-                ws2.merge_cells(start_row=lr, start_column=2, end_row=lr, end_column=4)
-                c = ws2.cell(lr, 2, f"【 UNTAPPED 현장 식별표 】 {p_info['p_num']}")
+                ws3.merge_cells(start_row=lr, start_column=2, end_row=lr, end_column=4)
+                c = ws3.cell(lr, 2, f"【 UNTAPPED 현장 식별표 】 {p_info['p_num']}")
                 c.font = Font(name="Malgun Gothic", size=18, bold=True)
                 c.fill = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
                 c.alignment = Alignment(horizontal="center", vertical="center")
                 lr += 1
 
-                ws2.merge_cells(start_row=lr, start_column=2, end_row=lr, end_column=4)
-                c = ws2.cell(lr, 2, p_info['code'])
+                ws3.merge_cells(start_row=lr, start_column=2, end_row=lr, end_column=4)
+                c = ws3.cell(lr, 2, p_info['code'])
                 c.font = Font(name="Malgun Gothic", size=50, bold=True)
                 c.alignment = Alignment(horizontal="center", vertical="center")
                 lr += 1
 
-                ws2.cell(lr, 2, p_info['color']).font = Font(name="Malgun Gothic", size=16, bold=True)
-                ws2.cell(lr, 3, ">").alignment = Alignment(horizontal="center", vertical="center")
-                ws2.cell(lr, 4, f"{p_info['size']} ({p_info['box_cnt']})").font = Font(name="Malgun Gothic", size=16, bold=True)
+                ws3.cell(lr, 2, p_info['color']).font = Font(name="Malgun Gothic", size=16, bold=True)
+                ws3.cell(lr, 3, ">").alignment = Alignment(horizontal="center", vertical="center")
+                ws3.cell(lr, 4, f"{p_info['size']} ({p_info['box_cnt']})").font = Font(name="Malgun Gothic", size=16, bold=True)
                 lr += 1
 
-                ws2.row_breaks.append(Break(id=lr))
+                ws3.row_breaks.append(Break(id=lr))
                 lr += 2
 
-            # 시트 3: 샘플_추출_리스트
-            ws3 = wb.create_sheet(title="샘플_추출_리스트")
-            ws3.page_setup.orientation = ws3.ORIENTATION_PORTRAIT
-            ws3.page_setup.paperSize = ws3.PAPERSIZE_A4
-            ws3.sheet_properties.pageSetUpPr.fitToPage = True
-            ws3.page_setup.fitToWidth = 1
-            ws3.page_setup.fitToHeight = 0
-            ws3.page_margins.left = 0.4
-            ws3.page_margins.right = 0.4
-            ws3.page_margins.top = 0.4
-            ws3.page_margins.bottom = 0.4
+            # 시트 4: 샘플_추출_리스트
+            ws4 = wb.create_sheet(title="샘플_추출_리스트")
+            ws4.page_setup.orientation = ws4.ORIENTATION_PORTRAIT
+            ws4.page_setup.paperSize = ws4.PAPERSIZE_A4
+            ws4.sheet_properties.pageSetUpPr.fitToPage = True
+            ws4.page_setup.fitToWidth = 1
+            ws4.page_setup.fitToHeight = 0
+            ws4.page_margins.left = 0.4
+            ws4.page_margins.right = 0.4
+            ws4.page_margins.top = 0.4
+            ws4.page_margins.bottom = 0.4
 
-            ws3.column_dimensions["A"].width = 16.0
-            ws3.column_dimensions["B"].width = 24.0
-            ws3.column_dimensions["C"].width = 24.0
-            ws3.column_dimensions["D"].width = 44.0
+            ws4.column_dimensions["A"].width = 16.0
+            ws4.column_dimensions["B"].width = 24.0
+            ws4.column_dimensions["C"].width = 24.0
+            ws4.column_dimensions["D"].width = 44.0
 
-            ws3.merge_cells("A1:D1")
-            ws3["A1"] = "【 검수/촬영용 샘플 추출 가이드 】"
-            ws3["A1"].font = Font(name="Malgun Gothic", size=15, bold=True)
-            ws3["A1"].alignment = Alignment(horizontal="center", vertical="center")
-            ws3.row_dimensions[1].height = 33.95
+            ws4.merge_cells("A1:D1")
+            ws4["A1"] = "【 검수/촬영용 샘플 추출 가이드 】"
+            ws4["A1"].font = Font(name="Malgun Gothic", size=15, bold=True)
+            ws4["A1"].alignment = Alignment(horizontal="center", vertical="center")
+            ws4.row_dimensions[1].height = 33.95
 
-            ws3.merge_cells("A2:D2")
-            ws3["A2"] = "※ 완박스 훼손 방지: 샘플 추출 시 가급적 MIX 박스 또는 최상단 자투리 박스에서 우선 추출!"
-            ws3["A2"].font = Font(name="Malgun Gothic", size=10, bold=True, color="1D4ED8")
-            ws3["A2"].alignment = Alignment(horizontal="center", vertical="center")
-            ws3.row_dimensions[2].height = 21.95
-            ws3.row_dimensions[3].height = 8.0
+            ws4.merge_cells("A2:D2")
+            ws4["A2"] = "※ 완박스 훼손 방지: 샘플 추출 시 가급적 MIX 박스 또는 최상단 자투리 박스에서 우선 추출!"
+            ws4["A2"].font = Font(name="Malgun Gothic", size=10, bold=True, color="1D4ED8")
+            ws4["A2"].alignment = Alignment(horizontal="center", vertical="center")
+            ws4.row_dimensions[2].height = 21.95
+            ws4.row_dimensions[3].height = 8.0
 
-            headers_s3 = ["상품코드", "컬러", "적용 로직", "샘플 지정 사이즈"]
-            ws3.row_dimensions[4].height = 27.95
-            for c_idx, h in enumerate(headers_s3, 1):
-                c = ws3.cell(4, c_idx, h)
+            headers_s4 = ["상품코드", "컬러", "적용 로직", "샘플 지정 사이즈"]
+            ws4.row_dimensions[4].height = 27.95
+            for c_idx, h in enumerate(headers_s4, 1):
+                c = ws4.cell(4, c_idx, h)
                 c.fill = PatternFill(start_color="0F172A", end_color="0F172A", fill_type="solid")
                 c.font = Font(name="Malgun Gothic", size=11, bold=True, color="FFFFFF")
                 c.alignment = Alignment(horizontal="center", vertical="center")
                 c.border = Border(top=Side(style='thin'), bottom=Side(style='thin'), left=Side(style='thin'), right=Side(style='thin'))
 
-            r3 = 5
+            r4 = 5
             for s_info in sample_guide:
-                ws3.row_dimensions[r3].height = 30.0
-                ws3.cell(r3, 1, s_info['prod']).font = Font(name="Malgun Gothic", size=12, bold=True)
-                ws3.cell(r3, 2, s_info['color']).font = Font(name="Malgun Gothic", size=11, bold=True)
+                ws4.row_dimensions[r4].height = 30.0
+                ws4.cell(r4, 1, s_info['prod']).font = Font(name="Malgun Gothic", size=12, bold=True)
+                ws4.cell(r4, 2, s_info['color']).font = Font(name="Malgun Gothic", size=11, bold=True)
                 
-                c_l = ws3.cell(r3, 3, s_info['logic'])
+                c_l = ws4.cell(r4, 3, s_info['logic'])
                 if "초도" in s_info['logic']:
                     c_l.font = Font(name="Malgun Gothic", size=10.5, bold=True, color="1D4ED8")
                     c_l.fill = PatternFill(start_color="DBEAFE", end_color="DBEAFE", fill_type="solid")
@@ -612,19 +663,19 @@ if uploaded_files:
                     c_l.font = Font(name="Malgun Gothic", size=10.5, bold=True, color="047857")
                     c_l.fill = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")
 
-                c_s = ws3.cell(r3, 4, s_info['sizes'])
+                c_s = ws4.cell(r4, 4, s_info['sizes'])
                 c_s.font = Font(name="Malgun Gothic", size=11, bold=True)
 
                 for c in range(1, 5):
-                    ws3.cell(r3, c).alignment = Alignment(horizontal="center", vertical="center")
-                    ws3.cell(r3, c).border = Border(top=Side(style='thin'), bottom=Side(style='thin'), left=Side(style='thin'), right=Side(style='thin'))
-                r3 += 1
+                    ws4.cell(r4, c).alignment = Alignment(horizontal="center", vertical="center")
+                    ws4.cell(r4, c).border = Border(top=Side(style='thin'), bottom=Side(style='thin'), left=Side(style='thin'), right=Side(style='thin'))
+                r4 += 1
 
             excel_buf = io.BytesIO()
             wb.save(excel_buf)
             excel_buf.seek(0)
 
-            st.subheader("📊 2단계: 공식 3-시트 엑셀 다운로드")
+            st.subheader("📊 2단계: 4-시트 공식 엑셀 다운로드")
             st.download_button(
                 label="📥 언탭트_현장총괄하역오더_공식최종본.xlsx 다운로드",
                 data=excel_buf,
