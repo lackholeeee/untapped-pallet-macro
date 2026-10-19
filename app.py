@@ -27,7 +27,7 @@ font_prop = get_korean_font()
 plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="UNTAPPED 하역 작업 지시서 엔진", layout="wide", page_icon="📦")
-st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V13")
+st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V14")
 st.markdown("패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계 카톡 요약문**, **2단계 4-시트 공식 엑셀(.xlsx)**, **3단계 2D CAD 미니맵**을 자동 생성합니다.")
 
 st.sidebar.header("⚙️ 하역 및 적재 조건 설정")
@@ -219,8 +219,6 @@ def parse_all_excel(files):
             st.error(f"파일 파싱 중 예외 발생: {e}")
 
     for b in all_boxes:
-        colors = list({it.get('color', 'DEFAULT') for it in b.get('items', [])})
-        if len(colors) == 1: b['color'] = colors[0]
         items = b.get('items', [])
         colors = list({it.get('color', 'DEFAULT') for it in items})
         if len(colors) == 1: b['color'] = colors[0]
@@ -271,7 +269,6 @@ if uploaded_files:
                 p_counter += 1
 
             order_summary_rows = []
-# [MIX 별도 격리 행 추가]
             if is_mix_quarantine and mix_boxes:
                 mix_summary_parts = []
                 for mb in mix_boxes:
@@ -279,13 +276,14 @@ if uploaded_files:
                     mix_summary_parts.append(f"박스 {mb['pkg']}({details})")
                 mix_summary_str = " / ".join(mix_summary_parts)
                 
-                order_summary_rows.insert(0, {
+                order_summary_rows.append({
                     'prod': 'MIX BATCH',
                     'color': '혼적전용',
                     'pallets': '1P',
                     'boxes': f"{len(mix_boxes)}박스",
                     'summary': f"[도크초입 격리] 1P ({len(mix_boxes)}박스: {mix_summary_str})"
                 })
+
             for (prod, color), size_dict in pure_by_sku.items():
                 active_sizes = [s for s in size_order if size_dict.get(s, 0) > 0]
                 tot_pure = sum(size_dict.values())
@@ -345,7 +343,6 @@ if uploaded_files:
                             summary_text_parts.append(f"[{sz}] 1P ({rem}박스)")
                             p_counter += 1
 
-                # [3.B MIX 상단 합적 및 다색 혼적 상세 내역 표기]
                 if not is_mix_quarantine and sku_mix_map.get((prod, color)):
                     m_boxes = sku_mix_map[(prod, color)]
                     m_cnt = len(m_boxes)
@@ -371,10 +368,10 @@ if uploaded_files:
                 if is_initial:
                     sample_guide.append({'prod': prod, 'color': "전체 컬러", 'logic': "[4. 초도 신상품 풀세트]", 'sizes': "M, L, XL, 2XL (전사이즈 각 1장 확보 / 완박스 보호 자투리 추출)"})
                 else:
-                    target_sizes = ['M', 'L', 'XL', '2XL', 'S']
+                    anti_monopoly_pool = ['M', 'L', 'XL', '2XL', 'S']
                     for idx, c in enumerate(prod_colors):
-                        assigned_sz = target_sizes[idx % len(target_sizes)]
-                        sample_guide.append({'prod': prod, 'color': c, 'logic': "[지속 리오더 (순환 분산)]", 'sizes': f"{assigned_sz} (1장 최소 추출 / 특정 사이즈 몰림 0% 차단)"})
+                        assigned_sz = anti_monopoly_pool[idx % len(anti_monopoly_pool)]
+                        sample_guide.append({'prod': prod, 'color': c, 'logic': "[지속 리오더 (순환 분산)]", 'sizes': f"{assigned_sz} (1장 최소 추출 / 안티모노폴리 규칙 적용)"})
 
             tot_all_boxes = len(raw_boxes)
             tot_all_pcs = sum(sum(it['qty'] for it in b['items']) for b in raw_boxes)
@@ -396,10 +393,8 @@ if uploaded_files:
             st.subheader("📋 1단계: 현장 총괄 오더 요약문 (카톡 복사용)")
             st.code(kakao_text, language="text")
 
-            # --- [7. 공식 4-시트 엑셀 생성 (.xlsx)] ---
             wb = openpyxl.Workbook()
 
-            # 시트 1: 총괄하역오더
             ws1 = wb.active
             ws1.title = "총괄하역오더"
             ws1.page_setup.orientation = ws1.ORIENTATION_LANDSCAPE
@@ -449,11 +444,11 @@ if uploaded_files:
 
             def build_rich(text):
                 rt = CellRichText()
-                parts = re.split(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|다색혼적MIX[^\(\)]*?합적)', text)
+                parts = re.split(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|다색혼적MIX[^\(\)]*?합적|도크초입)', text)
                 for part in parts:
                     if not part: continue
-                    if re.match(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|다색혼적MIX[^\(\)]*?합적)', part):
-                        color = "B91C1C" if "★" in part or "다색혼적" in part else "000000"
+                    if re.match(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|다색혼적MIX[^\(\)]*?합적|도크초입)', part):
+                        color = "B91C1C" if "★" in part or "다색혼적" in part or "도크초입" in part else "000000"
                         rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=18.0, b=True, color=color), part))
                     else:
                         rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=11.0, b=False, color="000000"), part))
@@ -512,7 +507,6 @@ if uploaded_files:
             c_sum5.border = Border(bottom=Side(style='double'))
             ws1.row_dimensions[cur_r].height = 28.5
 
-            # 시트 2: 수량집계표
             ws2 = wb.create_sheet(title="수량집계표")
             ws2.page_setup.orientation = ws2.ORIENTATION_LANDSCAPE
             ws2.merge_cells("A1:K1")
@@ -557,7 +551,6 @@ if uploaded_files:
                     ws2.cell(r2, col).alignment = Alignment(horizontal="center", vertical="center")
                 r2 += 1
 
-            # 시트 3: 파레트_대형라벨
             ws3 = wb.create_sheet(title="파레트_대형라벨")
             ws3.page_setup.orientation = ws3.ORIENTATION_PORTRAIT
             ws3.column_dimensions['A'].width = 4.0
@@ -587,7 +580,6 @@ if uploaded_files:
                 ws3.row_breaks.append(Break(id=lr))
                 lr += 2
 
-            # 시트 4: 샘플_추출_리스트
             ws4 = wb.create_sheet(title="샘플_추출_리스트")
             ws4.page_setup.orientation = ws4.ORIENTATION_PORTRAIT
             ws4.page_setup.paperSize = ws4.PAPERSIZE_A4
@@ -660,7 +652,6 @@ if uploaded_files:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-            # --- [8. 2D CAD 미니맵 렌더링 (.png)] ---
             st.subheader("🖼️ 3단계: 1P 단위 바둑판 2D CAD 미니맵")
             n_pallets = len(pallets)
             cols = 5
