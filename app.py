@@ -528,15 +528,14 @@ if uploaded_files:
             cur_r = 6
             for row in order_summary_rows:
                 summary_text = row['summary']
-                line_count = summary_text.count('
-') + 1
+                line_count = summary_text.count('\\n') + 1
                 calc_height = max(42.0, line_count * 22.0 + 15.0)
                 if len(summary_text) > 120: calc_height = max(calc_height, 75.0)
                 if len(summary_text) > 220: calc_height = max(calc_height, 105.0)
                 if len(summary_text) > 350: calc_height = max(calc_height, 140.0)
                 
                 ws1.row_dimensions[cur_r].height = calc_height
-                ws1.cell(cur_r, 1, row['prod']).font = Font(name="Malgun Gothic", size=12, bold=True)
+                ws1.cell(cur_r, 1, row['prod']).font = Font(name="Malgun Gothic", sz=12.0, b=True)
                 ws1.cell(cur_r, 2, row['color']).font = Font(name="Malgun Gothic", size=11, bold=True)
                 c_p = ws1.cell(cur_r, 3, row['pallets'])
                 c_p.font = Font(name="Malgun Gothic", size=13, bold=True, color="1D4ED8")
@@ -555,7 +554,7 @@ if uploaded_files:
 
             ws1.merge_cells(start_row=cur_r, start_column=1, end_row=cur_r, end_column=2)
             c_sum1 = ws1.cell(cur_r, 1, f"총 합계 ({len(order_summary_rows)}개 배정조합)")
-            c_sum1.font = Font(name="Malgun Gothic", size=12, bold=True)
+            c_sum1.font = Font(name="Malgun Gothic", sz=12.0, b=True)
             c_sum1.fill = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
             c_sum1.alignment = Alignment(horizontal="center", vertical="center")
             c_sum1.border = Border(bottom=Side(style='double'))
@@ -568,13 +567,13 @@ if uploaded_files:
             c_sum3.border = Border(bottom=Side(style='double'))
 
             c_sum4 = ws1.cell(cur_r, 4, f"{tot_all_boxes}박스")
-            c_sum4.font = Font(name="Malgun Gothic", size=12, bold=True)
+            c_sum4.font = Font(name="Malgun Gothic", sz=12.0, b=True)
             c_sum4.fill = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
             c_sum4.alignment = Alignment(horizontal="center", vertical="center")
             c_sum4.border = Border(bottom=Side(style='double'))
 
             c_sum5 = ws1.cell(cur_r, 5, f"완박스 {tot_all_boxes - len(mix_boxes)}박스 + MIX {len(mix_boxes)}박스 (오차율 0% 검증완료)")
-            c_sum5.font = Font(name="Malgun Gothic", size=12, bold=True)
+            c_sum5.font = Font(name="Malgun Gothic", sz=12.0, b=True)
             c_sum5.fill = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
             c_sum5.alignment = Alignment(horizontal="left", vertical="center", indent=1)
             c_sum5.border = Border(bottom=Side(style='double'))
@@ -694,7 +693,7 @@ if uploaded_files:
             r4 = 5
             for s_info in sample_guide:
                 ws4.row_dimensions[r4].height = 30.0
-                ws4.cell(r4, 1, s_info['prod']).font = Font(name="Malgun Gothic", size=12, bold=True)
+                ws4.cell(r4, 1, s_info['prod']).font = Font(name="Malgun Gothic", sz=12.0, b=True)
                 ws4.cell(r4, 2, s_info['color']).font = Font(name="Malgun Gothic", size=11, bold=True)
                 
                 c_l = ws4.cell(r4, 3, s_info['logic'])
