@@ -326,16 +326,14 @@ if uploaded_files:
                 for mb in mix_boxes:
                     details = ", ".join([f"{it['color']} {it['size']}-{it['qty']}장" for it in mb['items']])
                     mix_summary_lines.append(f"• [박스 {mb['pkg']}] {details}")
-                mix_str = "
-".join(mix_summary_lines)
+                mix_str = "\n".join(mix_summary_lines)
                 
                 order_summary_rows.append({
                     'prod': 'MIX BATCH',
                     'color': '혼적전용',
                     'pallets': '1P',
                     'boxes': f"{len(mix_boxes)}박스",
-                    'summary': f"【도크초입 별도격리】 다색혼적 총 {len(mix_boxes)}박스
-{mix_str}"
+                    'summary': f"【도크초입 별도격리】 다색혼적 총 {len(mix_boxes)}박스\n{mix_str}"
                 })
 
             for (prod, color), boxes_list in pure_by_sku_grouped.items():
@@ -448,8 +446,7 @@ if uploaded_files:
                     'color': color,
                     'pallets': f"{p_assigned}P",
                     'boxes': f"{tot_pure}박스",
-                    'summary': "
-".join(summary_text_parts)
+                    'summary': "\n".join(summary_text_parts)
                 })
 
             sample_guide = []
@@ -491,8 +488,7 @@ if uploaded_files:
                 lines_kakao.append(f"■ {r['prod']} ({r['color']}) [총 {r['pallets']} / {r['boxes']}]")
                 lines_kakao.append(f"  • {r['summary']}")
 
-            kakao_text = "
-".join(lines_kakao)
+            kakao_text = "\n".join(lines_kakao)
             st.subheader("📋 1단계: 현장 총괄 오더 요약문 (카톡 복사용)")
             st.code(kakao_text, language="text")
 
@@ -560,8 +556,7 @@ if uploaded_files:
             cur_r = 6
             for row in order_summary_rows:
                 summary_text = row['summary']
-                line_count = summary_text.count('
-') + 1
+                line_count = summary_text.count('\n') + 1
                 calc_height = max(42.0, line_count * 22.0 + 15.0)
                 if len(summary_text) > 120: calc_height = max(calc_height, 75.0)
                 if len(summary_text) > 220: calc_height = max(calc_height, 105.0)
