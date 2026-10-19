@@ -473,7 +473,7 @@ if uploaded_files:
             ws1.column_dimensions['B'].width = 14.0
             ws1.column_dimensions['C'].width = 22.625
             ws1.column_dimensions['D'].width = 14.0
-            ws1.column_dimensions['E'].width = 100.0
+            ws1.column_dimensions['E'].width = 140.0
 
             ws1.merge_cells("A1:E1")
             ws1["A1"] = "【 언탭트 물류센터 】 현장 총괄 하역 오더 요약서"
@@ -505,10 +505,19 @@ if uploaded_files:
                     else:
                         rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=11.0, b=False, color="000000"), part))
                 return rt
-
             cur_r = 5
             for row in order_summary_rows:
-                ws1.row_dimensions[cur_r].height = 36.0
+                # 텍스트 길이에 비례하여 행 높이를 넉넉하게 산정 (18pt 감안)
+                base_height = 45.0
+                summary_len = len(row['summary'])
+                if summary_len > 60:
+                    base_height = 65.0
+                if summary_len > 120:
+                    base_height = 90.0
+                if summary_len > 180:
+                    base_height = 120.0
+                
+                ws1.row_dimensions[cur_r].height = base_height
                 ws1.cell(cur_r, 1, row['prod']).font = Font(name="Malgun Gothic", size=12, bold=True)
                 ws1.cell(cur_r, 2, row['color']).font = Font(name="Malgun Gothic", size=11, bold=True)
                 c_p = ws1.cell(cur_r, 3, row['pallets'])
