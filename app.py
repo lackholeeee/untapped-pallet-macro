@@ -493,16 +493,16 @@ if uploaded_files:
                 c.font = Font(name="Malgun Gothic", size=11, bold=True, color="FFFFFF")
                 c.alignment = Alignment(horizontal="center", vertical="center")
 
-            def build_rich(text):
+                                                            def build_rich(text):
                 rt = CellRichText()
                 parts = re.split(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|다색혼적MIX[^\(\)]*?합적|도크초입|【도크초입)', text)
                 for part in parts:
-                    if not part: continue
-                    if re.match(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|다색혼적MIX[^\(\)]*?합적|도크초입|【도크초입)', part):
-                        color = "B91C1C" if "★" in part or "다색혼적" in part or "도크초입" in part or "【도크초입" in part else "000000"
-                        rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=18.0, b=True, color=color), part))
-                    else:
-                        rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", size=11, bold=False, color="000000"), part))
+                if not part: continue
+                if re.match(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|다색혼적MIX[^\(\)]*?합적|도크초입|【도크초입)', part):
+                color = "B91C1C" if "★" in part or "다색혼적" in part or "도크초입" in part or "【도크초입" in part else "000000"
+                rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=18.0, b=True, color=color), part))
+                else:
+                rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=11.0, b=False, color="000000"), part))
                 return rt
 
             cur_r = 6
