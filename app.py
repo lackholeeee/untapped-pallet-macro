@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import openpyxl
@@ -29,7 +28,7 @@ font_prop = get_korean_font()
 plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="UNTAPPED 하역 작업 지시서 엔진", layout="wide", page_icon="📦")
-st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V16")
+st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V17")
 st.markdown("패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계 카톡 요약문**, **2단계 4-시트 공식 엑셀(.xlsx)**, **3단계 2D CAD 미니맵**을 자동 생성합니다.")
 
 st.sidebar.header("⚙️ 하역 및 적재 조건 설정")
@@ -363,7 +362,7 @@ if uploaded_files:
                 p_assigned = p_counter - p_start
                 order_summary_rows.append({'prod': prod, 'color': color, 'pallets': f"{p_assigned}P", 'boxes': f"{tot_pure}박스", 'summary': "\n".join(summary_text_parts)})
 
-            # --- [샘플 추출 가이드 Anti-Monopoly 순환 분산 로직 (해시 기반 완벽 분산)] ---
+            # --- [샘플 추출 가이드: 해당 품목/컬러에 실존하는 사이즈 풀 내에서만 안티모노폴리 분산 적용] ---
             sample_guide = []
             all_skus = list({p for p, _ in pure_by_sku.keys()})
             for prod in all_skus:
@@ -372,11 +371,13 @@ if uploaded_files:
                 if is_initial:
                     sample_guide.append({'prod': prod, 'color': "전체 컬러", 'logic': "[4. 초도 신상품 풀세트]", 'sizes': "M, L, XL, 2XL (전사이즈 각 1장 확보 / 완박스 보호 자투리 추출)"})
                 else:
-                    anti_monopoly_pool = ['M', 'L', 'XL', '2XL', 'S']
                     for idx, c in enumerate(prod_colors):
+                        actual_sizes = [s for s in size_order if qty_summary[(prod, c)][s]['pcs'] > 0]
+                        if not actual_sizes: actual_sizes = ['M', 'L']
+                        
                         hash_val = int(hashlib.md5(f"{prod}_{c}".encode('utf-8')).hexdigest(), 16)
-                        assigned_sz = anti_monopoly_pool[hash_val % len(anti_monopoly_pool)]
-                        sample_guide.append({'prod': prod, 'color': c, 'logic': "[지속 리오더 (순환 분산)]", 'sizes': f"{assigned_sz} (1장 최소 추출 / 안티모노폴리 순환분산 적용)"})
+                        assigned_sz = actual_sizes[hash_val % len(actual_sizes)]
+                        sample_guide.append({'prod': prod, 'color': c, 'logic': "[지속 리오더 (순환 분산)]", 'sizes': f"{assigned_sz} (1장 최소 추출 / 실존 사이즈 내 안티모노폴리 분산)"})
 
             tot_all_boxes = len(raw_boxes)
             tot_all_pcs = sum(sum(it['qty'] for it in b['items']) for b in raw_boxes)
@@ -461,20 +462,21 @@ if uploaded_files:
 
             cur_r = 6
             for row in order_summary_rows:
-                base_height = 36.0
-                summary_len = len(row['summary'])
-                if summary_len > 80: base_height = 75.0
-                if summary_len > 150: base_height = 110.0
-                if summary_len > 250: base_height = 150.0
+                summary_text = row['summary']
+                line_count = summary_text.count('\n') + 1
+                calc_height = max(42.0, line_count * 22.0 + 15.0)
+                if len(summary_text) > 120: calc_height = max(calc_height, 75.0)
+                if len(summary_text) > 220: calc_height = max(calc_height, 105.0)
+                if len(summary_text) > 350: calc_height = max(calc_height, 140.0)
                 
-                ws1.row_dimensions[cur_r].height = base_height
+                ws1.row_dimensions[cur_r].height = calc_height
                 ws1.cell(cur_r, 1, row['prod']).font = Font(name="Malgun Gothic", size=12, bold=True)
                 ws1.cell(cur_r, 2, row['color']).font = Font(name="Malgun Gothic", size=11, bold=True)
                 c_p = ws1.cell(cur_r, 3, row['pallets'])
                 c_p.font = Font(name="Malgun Gothic", size=13, bold=True, color="1D4ED8")
                 c_p.fill = PatternFill(start_color="EFF6FF", end_color="EFF6FF", fill_type="solid")
                 ws1.cell(cur_r, 4, row['boxes']).font = Font(name="Malgun Gothic", size=11, bold=True)
-                ws1.cell(cur_r, 5, build_rich(row['summary']))
+                ws1.cell(cur_r, 5, build_rich(summary_text))
                 for c in range(1, 6):
                     ws1.cell(cur_r, c).border = Border(top=Side(style='thin'), bottom=Side(style='thin'), left=Side(style='thin'), right=Side(style='thin'))
                     if c == 5: ws1.cell(cur_r, c).alignment = Alignment(horizontal="left", vertical="center", wrap_text=True, indent=1)
