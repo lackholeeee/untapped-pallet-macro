@@ -28,7 +28,7 @@ font_prop = get_korean_font()
 plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="UNTAPPED 하역 작업 지시서 엔진", layout="wide", page_icon="📦")
-st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V29 (1P 상세 명기 및 송장출고 분할 종결판)")
+st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V30 (용어 및 1P 상세 종결판)")
 st.markdown("패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계 카톡 요약문**, **2단계 4-시트 공식 엑셀(.xlsx)**, **3단계 2D CAD 미니맵**을 자동 생성합니다.")
 
 st.sidebar.header("⚙️ 하역 및 적재 조건 설정")
@@ -306,12 +306,14 @@ if uploaded_files:
             pallets = []
             p_counter = 1
 
+            # ⚠️ 핵심 교정: 3.A 선택 시 다색 혼적(Multi-color mix) 박스들만 P-01로 도크 초입 격리합니다! 
+            # (단일 컬러의 잔여/자투리 박스는 믹스 박스가 아니므로 격리되지 않고 각 품목 파레트의 [자투리/잔여]로 정상 적재됩니다.)
             if is_mix_quarantine and mix_boxes:
                 pallets.append({
                     'p_num': f"P-{p_counter:02d}",
                     'code': "MIX BATCH",
                     'color': "혼적",
-                    'size': f"혼적 {len(mix_boxes)}박스",
+                    'size': f"다색혼적 {len(mix_boxes)}박스",
                     'box_cnt': f"{len(mix_boxes)}박스 (도크 초입 격리)",
                     'is_mix': True,
                     'is_full': False
@@ -324,14 +326,16 @@ if uploaded_files:
                 for mb in mix_boxes:
                     details = ", ".join([f"{it['color']} {it['size']}-{it['qty']}장" for it in mb['items']])
                     mix_summary_lines.append(f"• [박스 {mb['pkg']}] {details}")
-                mix_str = "\n".join(mix_summary_lines)
+                mix_str = "
+".join(mix_summary_lines)
                 
                 order_summary_rows.append({
                     'prod': 'MIX BATCH',
                     'color': '혼적전용',
                     'pallets': '1P',
                     'boxes': f"{len(mix_boxes)}박스",
-                    'summary': f"【도크초입 별도격리】 총 {len(mix_boxes)}박스\n{mix_str}"
+                    'summary': f"【도크초입 별도격리】 다색혼적 총 {len(mix_boxes)}박스
+{mix_str}"
                 })
 
             for (prod, color), boxes_list in pure_by_sku_grouped.items():
@@ -349,20 +353,57 @@ if uploaded_files:
                 summary_text_parts = []
                 p_start = p_counter
 
-                # 모드 1.A (보관) 및 모드 1.B (출고) 모두 1P당 세부 사이즈와 박스 수를 상세 명기!
-                if tot_pure <= L_limit:
-                    sz_summary_desc = ", ".join([f"{s}-{sum(1 for b in boxes_list if any(it['size']==s for it in b['items']))}박스" for s in active_sizes])
-                    pallets.append({
-                        'p_num': f"P-{p_counter:02d}",
-                        'code': prod,
-                        'color': color,
-                        'size': "ALL",
-                        'box_cnt': f"{tot_pure}박스 ({sz_summary_desc})",
-                        'is_mix': False,
-                        'is_full': (tot_pure == L_limit)
-                    })
-                    summary_text_parts.append(f"[ALL] 1P ({tot_pure}박스: {sz_summary_desc})")
-                    p_counter += 1
+                if not is_dispatch:
+                    if tot_pure <= L_limit:
+                        sz_summary_desc = ", ".join([f"{s}-{sum(1 for b in boxes_list if any(it['size']==s for it in b['items']))}박스" for s in active_sizes])
+                        pallets.append({
+                            'p_num': f"P-{p_counter:02d}",
+                            'code': prod,
+                            'color': color,
+                            'size': "ALL",
+                            'box_cnt': f"{tot_pure}박스 ({sz_summary_desc})",
+                            'is_mix': False,
+                            'is_full': (tot_pure == L_limit)
+                        })
+                        summary_text_parts.append(f"[ALL] 1P ({tot_pure}박스: {sz_summary_desc})")
+                        p_counter += 1
+                    else:
+                        full_pallets_cnt = tot_pure // L_limit
+                        rem_boxes_cnt = tot_pure % L_limit
+                        
+                        box_idx = 0
+                        for p_idx in range(full_pallets_cnt):
+                            p_boxes = boxes_list[box_idx : box_idx + L_limit]
+                            box_idx += L_limit
+                            p_sz_desc = ", ".join([f"{s}-{sum(1 for b in p_boxes if any(it['size']==s for it in b['items']))}박스" for s in active_sizes if any(any(it['size']==s for it in b['items']) for b in p_boxes)])
+                            
+                            pallets.append({
+                                'p_num': f"P-{p_counter:02d}",
+                                'code': prod,
+                                'color': color,
+                                'size': "완P",
+                                'box_cnt': f"{len(p_boxes)}박스 ({p_sz_desc})",
+                                'is_mix': False,
+                                'is_full': True
+                            })
+                            summary_text_parts.append(f"[완P] 1P ({len(p_boxes)}박스: {p_sz_desc})")
+                            p_counter += 1
+                            
+                        if rem_boxes_cnt > 0:
+                            rem_boxes = boxes_list[box_idx:]
+                            rem_sz_desc = ", ".join([f"{s}-{sum(1 for b in rem_boxes if any(it['size']==s for it in b['items']))}박스" for s in active_sizes if any(any(it['size']==s for it in b['items']) for b in rem_boxes)])
+                            
+                            pallets.append({
+                                'p_num': f"P-{p_counter:02d}",
+                                'code': prod,
+                                'color': color,
+                                'size': "자투리",
+                                'box_cnt': f"{rem_boxes_cnt}박스 ({rem_sz_desc})",
+                                'is_mix': False,
+                                'is_full': False
+                            })
+                            summary_text_parts.append(f"[자투리] 1P ({rem_boxes_cnt}박스: {rem_sz_desc})")
+                            p_counter += 1
                 else:
                     full_pallets_cnt = tot_pure // L_limit
                     rem_boxes_cnt = tot_pure % L_limit
@@ -393,12 +434,12 @@ if uploaded_files:
                             'p_num': f"P-{p_counter:02d}",
                             'code': prod,
                             'color': color,
-                            'size': "MIX",
+                            'size': "자투리",
                             'box_cnt': f"{rem_boxes_cnt}박스 ({rem_sz_desc})",
                             'is_mix': False,
                             'is_full': False
                         })
-                        summary_text_parts.append(f"[MIX] 1P ({rem_boxes_cnt}박스: {rem_sz_desc})")
+                        summary_text_parts.append(f"[자투리] 1P ({rem_boxes_cnt}박스: {rem_sz_desc})")
                         p_counter += 1
 
                 p_assigned = p_counter - p_start
@@ -407,7 +448,8 @@ if uploaded_files:
                     'color': color,
                     'pallets': f"{p_assigned}P",
                     'boxes': f"{tot_pure}박스",
-                    'summary': "\n".join(summary_text_parts)
+                    'summary': "
+".join(summary_text_parts)
                 })
 
             sample_guide = []
@@ -449,7 +491,8 @@ if uploaded_files:
                 lines_kakao.append(f"■ {r['prod']} ({r['color']}) [총 {r['pallets']} / {r['boxes']}]")
                 lines_kakao.append(f"  • {r['summary']}")
 
-            kakao_text = "\n".join(lines_kakao)
+            kakao_text = "
+".join(lines_kakao)
             st.subheader("📋 1단계: 현장 총괄 오더 요약문 (카톡 복사용)")
             st.code(kakao_text, language="text")
 
@@ -486,7 +529,7 @@ if uploaded_files:
             ws1.row_dimensions[2].height = 18.0
 
             ws1.merge_cells("A3:E3")
-            ws1["A3"] = "※ 송장 출고/진열/보관 등 현장 목적에 따른 파레트 배정 요약 (1P당 세부 사이즈 명기 및 MIX 명칭 적용)"
+            ws1["A3"] = "※ 송장 출고/진열/보관 등 현장 목적에 따른 파레트 배정 요약 (1P당 세부 사이즈 명기 및 다색혼적 격리 적용)"
             ws1["A3"].font = Font(name="Malgun Gothic", size=10.5, bold=True)
             ws1["A3"].alignment = Alignment(horizontal="center", vertical="center")
             ws1.row_dimensions[3].height = 21.95
@@ -517,7 +560,8 @@ if uploaded_files:
             cur_r = 6
             for row in order_summary_rows:
                 summary_text = row['summary']
-                line_count = summary_text.count('\\n') + 1
+                line_count = summary_text.count('
+') + 1
                 calc_height = max(42.0, line_count * 22.0 + 15.0)
                 if len(summary_text) > 120: calc_height = max(calc_height, 75.0)
                 if len(summary_text) > 220: calc_height = max(calc_height, 105.0)
@@ -561,7 +605,7 @@ if uploaded_files:
             c_sum4.alignment = Alignment(horizontal="center", vertical="center")
             c_sum4.border = Border(bottom=Side(style='double'))
 
-            c_sum5 = ws1.cell(cur_r, 5, f"완박스 {tot_all_boxes - len(mix_boxes)}박스 + MIX {len(mix_boxes)}박스 (오차율 0% 검증완료)")
+            c_sum5 = ws1.cell(cur_r, 5, f"완박스 {tot_all_boxes - len(mix_boxes)}박스 + 다색혼적 {len(mix_boxes)}박스 (오차율 0% 검증완료)")
             c_sum5.font = Font(name="Malgun Gothic", sz=12.0, b=True)
             c_sum5.fill = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
             c_sum5.alignment = Alignment(horizontal="left", vertical="center", indent=1)
