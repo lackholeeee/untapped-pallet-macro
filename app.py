@@ -28,7 +28,7 @@ font_prop = get_korean_font()
 plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="UNTAPPED 하역 작업 지시서 엔진", layout="wide", page_icon="📦")
-st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V26 (1P 상세 명기 및 MIX 명칭 확정판)")
+st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V28")
 st.markdown("패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계 카톡 요약문**, **2단계 4-시트 공식 엑셀(.xlsx)**, **3단계 2D CAD 미니맵**을 자동 생성합니다.")
 
 st.sidebar.header("⚙️ 하역 및 적재 조건 설정")
@@ -84,6 +84,14 @@ def parse_all_excel(files):
                     else: continue
                         
                     ct_col, color_col, box_cnt_col = 1, 4, 9
+                    for r_idx in range(min(10, len(df))):
+                        for c_idx, val in enumerate(df.iloc[r_idx].values):
+                            if pd.notna(val):
+                                v_str = str(val).strip().upper()
+                                if v_str in ['箱数', 'BOX', 'BOXES']: box_cnt_col = c_idx
+                                elif v_str in ['颜色', 'COLOR']: color_col = c_idx
+                                elif v_str in ['箱号', 'CT NO', 'CTNO']: ct_col = c_idx
+                                
                     df[color_col] = df[color_col].ffill()
                     
                     for r in range(size_row_idx + 2, len(df)):
@@ -199,7 +207,7 @@ def parse_all_excel(files):
 
                         if row_items:
                             for b_i in range(box_count):
-                                p_name = f"{pkg_val}-{b_i+1}" if (pkg_val and box_count > 1) else (pkg_val if box_count else f"CTN-{len(all_boxes)+1}")
+                                p_name = f"{pkg_val}-{b_i+1}" if (pkg_val and box_count > 1) else (pkg_val if pkg_val else f"CTN-{len(all_boxes)+1}")
                                 all_boxes.append({'pkg': p_name, 'prod': cur_prod, 'items': row_items})
 
                 elif format_type == 'LIST':
@@ -331,11 +339,9 @@ if uploaded_files:
                 sku_size_pcs = defaultdict(int)
                 sku_size_boxes = defaultdict(int)
                 for b in boxes_list:
-                    # Determine sizes present in this box
                     b_sizes = {it['size'] for it in b['items']}
                     for it in b['items']:
                         sku_size_pcs[it['size']] += it['qty']
-                    # For box counting per size, if a box has multiple sizes, attribute it or list it
                     for sz in b_sizes:
                         sku_size_boxes[sz] += 1
 
@@ -344,9 +350,6 @@ if uploaded_files:
                 p_start = p_counter
 
                 if not is_dispatch:
-                    # 모드 1.A: 단순 보관 (사이즈별 독립 1P 할당 또는 L_limit 단위 묶음, 상세 1P당 사이즈/수량 명기)
-                    # 현장에서 1P마다 어떤 사이즈가 들어있는지 명확히 알 수 있도록 사이즈별로 분할 또는 명시
-                    # 만약 총 박스가 L_limit 이하면 [ALL] 1P로 묶되 상세 박스수 명기
                     if tot_pure <= L_limit:
                         sz_summary_desc = ", ".join([f"{s}-{sum(1 for b in boxes_list if any(it['size']==s for it in b['items']))}박스" for s in active_sizes])
                         pallets.append({
@@ -361,7 +364,6 @@ if uploaded_files:
                         summary_text_parts.append(f"[ALL] 1P ({tot_pure}박스: {sz_summary_desc})")
                         p_counter += 1
                     else:
-                        # 완파레트(L_limit 단위)와 MIX(자투리) 파레트로 분할하되, 각 1P마다 들어있는 사이즈/박스수를 명기!
                         full_pallets_cnt = tot_pure // L_limit
                         rem_boxes_cnt = tot_pure % L_limit
                         
@@ -632,7 +634,7 @@ if uploaded_files:
             lr = 1
             for p_info in pallets:
                 ws3.merge_cells(start_row=lr, start_column=2, end_row=lr, end_column=4)
-                c = ws3.cell(lr, 2, f"【 UNTAPPED 현장 식별표 】 {p_info['p_num']}")
+                c = ws3.cell(lr, 2, f"【 현장 식별표 】 {p_info['p_num']}")
                 c.font = Font(name="Malgun Gothic", size=18, bold=True)
                 c.fill = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
                 c.alignment = Alignment(horizontal="center", vertical="center")
@@ -767,5 +769,5 @@ if uploaded_files:
                 label="🖼️ CAD 미니맵 이미지(.png) 다운로드",
                 data=img_buf,
                 file_name="언탭트_파레트하역_2D미니맵.png",
-                mime="image/png"
+                mime="application/png"
             )
