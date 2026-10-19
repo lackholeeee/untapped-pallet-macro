@@ -62,6 +62,7 @@ initial_skus = [x.strip().upper() for x in re.split(r'[,/\s]+', new_items_input)
 uploaded_files = st.file_uploader("📥 패킹리스트 엑셀 파일 업로드 (다중 파일 지원)", type=["xlsx", "xls"], accept_multiple_files=True)
 
 # --- [4. 만능 엑셀 파싱 함수] ---
+
 def parse_all_excel(files):
     all_boxes = []
     size_candidates = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', 'FREE']
@@ -71,54 +72,90 @@ def parse_all_excel(files):
             xl = pd.ExcelFile(f)
             target_sheet = xl.sheet_names[0]
             for s in xl.sheet_names:
-                if any(k in s for k in ['MUN', '패킹', '출고', '입고', 'DETAIL']):
+                if any(k in s.upper() for k in ['MUN', '패킹', '출고', '입고', 'DETAIL']):
                     target_sheet = s
                     break
-            df = xl.parse(target_sheet)
+            df = xl.parse(target_sheet, header=None)
 
-            matrix_header_row = -1
+            header_row_idx = -1
+            format_type = None
             size_cols_map = {}
-            for r_idx in range(min(15, len(df))):
-                row_vals = [str(v).strip().upper() for v in df.iloc[r_idx].values if pd.notna(v)]
+            col_map = {}
+            
+            for r_idx in range(min(20, len(df))):
+                row_vals = [str(v).strip().upper().replace(' ', '') for v in df.iloc[r_idx].values if pd.notna(v)]
+                
+                # Check for MATRIX format
                 found_sizes = [s for s in size_candidates if s in row_vals]
                 if len(found_sizes) >= 2:
-                    matrix_header_row = r_idx
-                    for col_idx, col_name in enumerate(df.columns):
-                        val = str(df.iloc[r_idx, col_idx]).strip().upper()
+                    header_row_idx = r_idx
+                    format_type = 'MATRIX'
+                    for col_idx, col_name in enumerate(df.iloc[r_idx].values):
+                        val = str(col_name).strip().upper().replace(' ', '')
                         if val in size_candidates:
                             size_cols_map[val] = col_idx
                     break
+                    
+                # Check for LIST format
+                if any('사이즈' in v or 'SIZE' in v or '尺码' in v for v in row_vals) and any('수량' in v or 'QTY' in v or '件数' in v for v in row_vals):
+                    header_row_idx = r_idx
+                    format_type = 'LIST'
+                    for col_idx, col_name in enumerate(df.iloc[r_idx].values):
+                        val = str(col_name).strip().upper().replace(' ', '')
+                        if '상품' in val or '款号' in val or 'PROD' in val or '품명' in val: col_map['prod'] = col_idx
+                        if '컬러' in val or '칼라' in val or 'COLOR' in val or '색상' in val: col_map['color'] = col_idx
+                        if '사이즈' in val or 'SIZE' in val or '尺码' in val: col_map['size'] = col_idx
+                        if '수량' in val or 'QTY' in val or '件数' in val or '수량' in val: col_map['qty'] = col_idx
+                        # STRICTER PKG matching
+                        if '패킹' in val or '박스번호' in val or '箱号' in val or 'CTN' in val or 'CARTON' in val: 
+                            col_map['pkg'] = col_idx
+                    break
 
-            if matrix_header_row != -1 and len(size_cols_map) >= 2:
-                # [유형 A: 가로 매트릭스형]
+            if format_type == 'MATRIX':
                 cur_prod = "MUN_ITEM"
                 cur_color = "DEFAULT"
-                pkg_col = next((c for c in range(len(df.columns)) if any(k in str(df.iloc[max(0, matrix_header_row-1), c]) for k in ['패킹', '箱号', 'CTN', '박스'])), 2)
+                
+                pkg_col = 2
+                box_cnt_col = None
+                search_rows = [header_row_idx]
+                if header_row_idx > 0: search_rows.insert(0, header_row_idx - 1)
+                
+                for sr in search_rows:
+                    for c, v in enumerate(df.iloc[sr].values):
+                        if pd.notna(v):
+                            v_str = str(v).strip().upper().replace(' ', '')
+                            if any(k in v_str for k in ['패킹', '箱号', 'CTN', '박스번호']):
+                                pkg_col = c
+                            if any(k in v_str for k in ['箱数', '박스수', 'CTNS', 'CNT']):
+                                box_cnt_col = c
 
-                for r in range(matrix_header_row + 1, len(df)):
+                for r in range(header_row_idx + 1, len(df)):
                     row = df.iloc[r]
                     row_str = " ".join([str(v) for v in row.values if pd.notna(v)])
                     if any(k in row_str for k in ['합계', '合计', '小计', '총합', 'TOTAL']):
                         continue
 
-                    c0 = str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else ""
-                    c1 = str(row.iloc[1]).strip() if pd.notna(row.iloc[1]) else ""
+                    c0 = str(row.iloc[0]).strip() if len(row.values) > 0 and pd.notna(row.iloc[0]) else ""
+                    c1 = str(row.iloc[1]).strip() if len(row.values) > 1 and pd.notna(row.iloc[1]) else ""
+                    
                     for c_val in [c0, c1]:
-                        if any(c_val.startswith(p) for p in ['MUN', 'DJ']):
-                            cur_prod = c_val.split()[0] if ' ' in c_val else c_val
-                        color_keys = ['BK', 'BLACK', 'WHITE', 'WH', 'GY', 'GRAY', 'KH', 'KHAKI', 'BR', 'BROWN', 'CR', 'CREAM', 'CHARCOAL', 'CH', 'BLUE', 'WBL', 'VB', 'LG', 'KB', 'NAVY', 'BEIGE']
+                        c_up = c_val.upper()
+                        if any(c_up.startswith(p) for p in ['MUN', 'DJ']):
+                            match = re.search(r'(MUN|DJ)\s*\d+[A-Z]*', c_up)
+                            cur_prod = match.group(0).replace(" ", "") if match else c_val
+                        
+                        color_keys = ['BK', 'BLACK', 'WHITE', 'WH', 'GY', 'GRAY', 'KH', 'KHAKI', 'BR', 'BROWN', 'CR', 'CREAM', 'CHARCOAL', 'CH', 'BLUE', 'DEEP', 'WBL', 'VB', 'LG', 'KB', 'NAVY', 'BEIGE', 'OATMEAL', 'IVORY']
                         for k in color_keys:
-                            if k in c_val.upper():
+                            if k in c_up:
                                 for token in c_val.replace(',', ' ').split():
                                     if token.upper() in color_keys:
                                         cur_color = token.upper()
                                         break
 
-                    pkg_val = str(row.iloc[pkg_col]).strip() if pd.notna(row.iloc[pkg_col]) else ""
+                    pkg_val = str(row.iloc[pkg_col]).strip() if pkg_col < len(row.values) and pd.notna(row.iloc[pkg_col]) else ""
                     
-                    box_cnt_col = next((c for c in range(len(df.columns)) if any(k in str(df.iloc[max(0, matrix_header_row-1), c]) for k in ['箱数', '박스수', 'CTNS', 'CNT'])), None)
                     box_count = 1
-                    if box_cnt_col is not None and pd.notna(row.iloc[box_cnt_col]):
+                    if box_cnt_col is not None and box_cnt_col < len(row.values) and pd.notna(row.iloc[box_cnt_col]):
                         try:
                             box_count = int(float(row.iloc[box_cnt_col]))
                         except:
@@ -126,63 +163,79 @@ def parse_all_excel(files):
 
                     row_items = []
                     for sz, c_idx in size_cols_map.items():
-                        q_val = row.iloc[c_idx]
-                        if pd.notna(q_val):
-                            try:
-                                q_int = int(float(q_val))
-                                if q_int > 0:
-                                    row_items.append({'size': sz, 'qty': q_int})
-                            except:
-                                pass
+                        if c_idx < len(row.values):
+                            q_val = row.iloc[c_idx]
+                            if pd.notna(q_val):
+                                try:
+                                    q_int = int(float(q_val))
+                                    if q_int > 0:
+                                        row_items.append({'size': sz, 'qty': q_int})
+                                except:
+                                    pass
 
                     if row_items:
                         for b_i in range(box_count):
                             p_name = f"{pkg_val}-{b_i+1}" if (pkg_val and box_count > 1) else (pkg_val if pkg_val else f"CTN-{len(all_boxes)+1}")
-                            all_boxes.append({
-                                'pkg': p_name,
-                                'prod': cur_prod,
-                                'color': cur_color,
-                                'items': row_items
-                            })
-            else:
-                # [유형 B: 세로 리스트형]
-                pkg_col = next((c for c in df.columns if any(k in str(c) for k in ['패킹', '箱号', 'CTN', '넘버'])), None)
+                            all_boxes.append({'pkg': p_name, 'prod': cur_prod, 'color': cur_color, 'items': row_items})
+
+            elif format_type == 'LIST':
                 cur_prod = "MUN_ITEM"
                 cur_color = "DEFAULT"
+                prev_pkg = None
 
-                for idx, row in df.iterrows():
+                for r in range(header_row_idx + 1, len(df)):
+                    row = df.iloc[r]
                     row_str = " ".join([str(v) for v in row.values if pd.notna(v)])
                     if any(k in row_str for k in ['박스 총 수량', '옷 총 수량', '총합', '合计', '小计', 'TOTAL']):
                         continue
+                        
+                    p_val = row.iloc[col_map['prod']] if 'prod' in col_map and col_map['prod'] < len(row.values) else None
+                    c_val = row.iloc[col_map['color']] if 'color' in col_map and col_map['color'] < len(row.values) else None
+                    s_val = row.iloc[col_map['size']] if 'size' in col_map and col_map['size'] < len(row.values) else None
+                    q_val = row.iloc[col_map['qty']] if 'qty' in col_map and col_map['qty'] < len(row.values) else None
+                    
+                    pkg_val = None
+                    if 'pkg' in col_map and col_map['pkg'] < len(row.values):
+                        pkg_val = row.iloc[col_map['pkg']]
+                    
+                    if pd.notna(p_val) and str(p_val).strip().upper().startswith(('MUN', 'DJ')):
+                        match = re.search(r'(MUN|DJ)\s*\d+[A-Z]*', str(p_val).strip().upper())
+                        cur_prod = match.group(0).replace(" ", "") if match else str(p_val).strip()
+                        
+                    if pd.notna(c_val) and not any(k in str(c_val) for k in ['총', '박스', '합', '合计']):
+                        c_up = str(c_val).strip().upper()
+                        color_keys = ['BK', 'BLACK', 'WHITE', 'WH', 'GY', 'GRAY', 'KH', 'KHAKI', 'BR', 'BROWN', 'CR', 'CREAM', 'CHARCOAL', 'CH', 'BLUE', 'DEEP', 'WBL', 'VB', 'LG', 'KB', 'NAVY', 'BEIGE', 'OATMEAL', 'IVORY']
+                        for k in color_keys:
+                            if k in c_up:
+                                for token in c_up.replace(',', ' ').split():
+                                    if token in color_keys:
+                                        cur_color = token
+                                        break
 
-                    prod = row.get('상품명') or row.get('款号')
-                    color = row.get('컬러') or row.get('칼라') or row.get('COLOR')
-                    size = row.get('사이즈') or row.get('SIZE')
-                    qty = row.get('수량') or row.get('QTY')
-                    pkg = row.get(pkg_col) if pkg_col else None
-
-                    if pd.notna(prod) and str(prod).strip().startswith(('MUN', 'DJ')):
-                        cur_prod = str(prod).strip()
-                    if pd.notna(color) and not any(k in str(color) for k in ['총', '박스', '합', '合计']):
-                        cur_color = str(color).strip()
-
-                    is_new_box = pd.notna(pkg) and any(k in str(pkg) for k in ['HY', '-', '~', '호', 'CTN'])
-                    if is_new_box:
-                        all_boxes.append({
-                            'pkg': str(pkg).strip(),
-                            'prod': cur_prod,
-                            'color': cur_color,
-                            'items': []
-                        })
-
-                    if pd.notna(qty) and isinstance(qty, (int, float)) and qty > 0 and pd.notna(size):
-                        sz = str(size).strip().upper()
-                        if sz in size_candidates:
-                            if not all_boxes:
-                                all_boxes.append({'pkg': 'CTN-01', 'prod': cur_prod, 'color': cur_color, 'items': []})
-                            all_boxes[-1]['items'].append({'size': sz, 'qty': int(qty)})
+                    if not pd.notna(q_val):
+                        continue
+                        
+                    try:
+                        q_int = int(float(q_val))
+                        sz = str(s_val).strip().upper()
+                        if q_int > 0 and sz in size_candidates:
+                            if pd.notna(pkg_val):
+                                pkg_str = str(pkg_val).strip()
+                                all_boxes.append({'pkg': pkg_str, 'prod': cur_prod, 'color': cur_color, 'items': [{'size': sz, 'qty': q_int}]})
+                                prev_pkg = pkg_str
+                            else:
+                                # pkg_val is missing. If prev_pkg exists, it's a mix. If not, it's a new box.
+                                if prev_pkg and all_boxes:
+                                    all_boxes[-1]['items'].append({'size': sz, 'qty': q_int})
+                                else:
+                                    pkg_str = f"CTN-{len(all_boxes)+1}"
+                                    all_boxes.append({'pkg': pkg_str, 'prod': cur_prod, 'color': cur_color, 'items': [{'size': sz, 'qty': q_int}]})
+                                    prev_pkg = pkg_str
+                    except:
+                        pass
+                        
         except Exception as e:
-            st.error(f"파일 파싱 중 예외 발생 ({f.name}): {e}")
+            print(f"Error: {e}")
 
     return all_boxes
 
