@@ -527,8 +527,7 @@ if uploaded_files:
             cur_r = 6
             for row in order_summary_rows:
                 summary_text = row['summary']
-                line_count = summary_text.count('
-') + 1
+                line_count = summary_text.count('\n') + 1
                 calc_height = max(42.0, line_count * 22.0 + 15.0)
                 if len(summary_text) > 120: calc_height = max(calc_height, 75.0)
                 if len(summary_text) > 220: calc_height = max(calc_height, 105.0)
