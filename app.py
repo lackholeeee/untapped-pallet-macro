@@ -27,7 +27,7 @@ font_prop = get_korean_font()
 plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="UNTAPPED 하역 작업 지시서 엔진", layout="wide", page_icon="📦")
-st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V12")
+st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V13")
 st.markdown("패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계 카톡 요약문**, **2단계 4-시트 공식 엑셀(.xlsx)**, **3단계 2D CAD 미니맵**을 자동 생성합니다.")
 
 st.sidebar.header("⚙️ 하역 및 적재 조건 설정")
@@ -271,6 +271,21 @@ if uploaded_files:
                 p_counter += 1
 
             order_summary_rows = []
+# [MIX 별도 격리 행 추가]
+            if is_mix_quarantine and mix_boxes:
+                mix_summary_parts = []
+                for mb in mix_boxes:
+                    details = ", ".join([f"{it['color']} {it['size']}-{it['qty']}장" for it in mb['items']])
+                    mix_summary_parts.append(f"박스 {mb['pkg']}({details})")
+                mix_summary_str = " / ".join(mix_summary_parts)
+                
+                order_summary_rows.insert(0, {
+                    'prod': 'MIX BATCH',
+                    'color': '혼적전용',
+                    'pallets': '1P',
+                    'boxes': f"{len(mix_boxes)}박스",
+                    'summary': f"[도크초입 격리] 1P ({len(mix_boxes)}박스: {mix_summary_str})"
+                })
             for (prod, color), size_dict in pure_by_sku.items():
                 active_sizes = [s for s in size_order if size_dict.get(s, 0) > 0]
                 tot_pure = sum(size_dict.values())
