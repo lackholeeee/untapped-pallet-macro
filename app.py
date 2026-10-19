@@ -27,7 +27,7 @@ font_prop = get_korean_font()
 plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="UNTAPPED 하역 작업 지시서 엔진", layout="wide", page_icon="📦")
-st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V8")
+st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V11")
 st.markdown("패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계 카톡 요약문**, **2단계 4-시트 공식 엑셀(.xlsx)**, **3단계 2D CAD 미니맵**을 자동 생성합니다.")
 
 st.sidebar.header("⚙️ 하역 및 적재 조건 설정")
@@ -327,12 +327,20 @@ if uploaded_files:
                             summary_text_parts.append(f"[{sz}] 1P ({rem}박스)")
                             p_counter += 1
 
+                # [3.B MIX 상단 합적 및 다색 혼적 상세 내역 표기]
                 if not is_mix_quarantine and sku_mix_map.get((prod, color)):
-                    m_cnt = len(sku_mix_map[(prod, color)])
+                    m_boxes = sku_mix_map[(prod, color)]
+                    m_cnt = len(m_boxes)
                     if pallets:
-                        pallets[-1]['box_cnt'] += f" + ★MIX {m_cnt}박스 상단합적"
+                        mix_desc_list = []
+                        for mb in m_boxes:
+                            details = ", ".join([f"{it['color']} {it['size']}-{it['qty']}장" for it in mb['items']])
+                            mix_desc_list.append(f"박스({details})")
+                        desc_str = " / ".join(mix_desc_list)
+                        
+                        pallets[-1]['box_cnt'] += f" + ★다색혼적MIX {m_cnt}박스 [{desc_str}] 상단합적"
                         pallets[-1]['is_mix'] = True
-                        summary_text_parts.append(f"★최상단 MIX {m_cnt}박스 합적")
+                        summary_text_parts.append(f"★최상단 다색혼적MIX {m_cnt}박스 [{desc_str}] 합적")
 
                 p_assigned = p_counter - p_start
                 order_summary_rows.append({'prod': prod, 'color': color, 'pallets': f"{p_assigned}P", 'boxes': f"{tot_pure}박스", 'summary': " / ".join(summary_text_parts)})
@@ -405,7 +413,7 @@ if uploaded_files:
             ws1.row_dimensions[2].height = 18.0
 
             ws1.merge_cells("A3:E3")
-            ws1["A3"] = "※ 송장 출고/진열/보관 등 현장 목적에 따른 파레트 배정 요약"
+            ws1["A3"] = "※ 송장 출고/진열/보관 등 현장 목적에 따른 파레트 배정 요약 (다색 혼적 박스 상세 성분 포함)"
             ws1["A3"].font = Font(name="Malgun Gothic", size=10.5, bold=True)
             ws1["A3"].alignment = Alignment(horizontal="center", vertical="center")
             ws1.row_dimensions[3].height = 21.95
@@ -423,11 +431,11 @@ if uploaded_files:
 
             def build_rich(text):
                 rt = CellRichText()
-                parts = re.split(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|믹스건[^\(\)]*?진열)', text)
+                parts = re.split(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|다색혼적MIX[^\(\)]*?합적)', text)
                 for part in parts:
                     if not part: continue
-                    if re.match(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|믹스건[^\(\)]*?진열)', part):
-                        color = "B91C1C" if "★" in part else "000000"
+                    if re.match(r'(\[[\w\+\s~]+\]\s*\d+P|★최상단[^\(\)]*?합적|★믹스[^\(\)]*?격리|다색혼적MIX[^\(\)]*?합적)', part):
+                        color = "B91C1C" if "★" in part or "다색혼적" in part else "000000"
                         rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=18.0, b=True, color=color), part))
                     else:
                         rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=11.0, b=False, color="000000"), part))
