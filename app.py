@@ -28,7 +28,7 @@ font_prop = get_korean_font()
 plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title='UNTAPPED 하역 작업 지시서 엔진', layout='wide', page_icon='📦')
-st.title('📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V31 (오류 완전 무결 종결판)')
+st.title('📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V33 (만능 동적 파서 및 3대 양식 통합 종결판)')
 st.markdown('패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계 카톡 요약문**, **2단계 4-시트 공식 엑셀(.xlsx)**, **3단계 2D CAD 미니맵**을 자동 생성합니다.')
 
 st.sidebar.header('⚙️ 하역 및 적재 조건 설정')
@@ -165,7 +165,7 @@ def parse_all_excel(files):
                         for c, v in enumerate(df.iloc[sr].values):
                             if pd.notna(v):
                                 v_str = str(v).strip().upper().replace(' ', '')
-                                if any(k in v_str for k in ['패킹', '箱号', 'CTN', '박스번호']): pkg_col = c
+                                if any(k in v_str for k in ['패킹', '箱号', 'CTN', '박스번호', 'CTNO']): pkg_col = c
                                 if any(k in v_str for k in ['箱数', '박스수', 'CTNS', 'CNT']): box_cnt_col = c
 
                     for r in range(header_row_idx + 1, len(df)):
@@ -190,6 +190,8 @@ def parse_all_excel(files):
                                 if re.match(r'^[A-Z\s]+$', c_up): cur_color = c_up
 
                         pkg_val = str(row.iloc[pkg_col]).strip() if pkg_col < len(row.values) and pd.notna(row.iloc[pkg_col]) else ''
+                        if not pkg_val or pkg_val in ['nan', '']: continue
+                            
                         box_count = 1
                         if box_cnt_col is not None and box_cnt_col < len(row.values) and pd.notna(row.iloc[box_cnt_col]):
                             try: box_count = int(float(row.iloc[box_cnt_col]))
@@ -207,7 +209,7 @@ def parse_all_excel(files):
 
                         if row_items:
                             for b_i in range(box_count):
-                                p_name = f'{pkg_val}-{b_i+1}' if (pkg_val and box_count > 1) else (pkg_val if pkg_val else f'CTN-{len(all_boxes)+1}')
+                                p_name = f'{pkg_val}-{b_i+1}' if box_count > 1 else pkg_val
                                 all_boxes.append({'pkg': p_name, 'prod': cur_prod, 'items': row_items})
 
                 elif format_type == 'LIST':
@@ -231,7 +233,7 @@ def parse_all_excel(files):
                             continue
                         else: empty_streak = 0
                         
-                        if pd.notna(p_val) and str(p_val).strip().upper().startswith(('MUN', 'DJ')):
+                        if pd.notna(p_val) and str(p_val).strip().upper().startswith(('MUN', 'DJ')) :
                             match = re.search(r'(MUN|DJ)\s*\d+[A-Z0-9]*', str(p_val).strip().upper())
                             if match: cur_prod = match.group(0).replace(' ', '')
                             else: cur_prod = str(p_val).strip().upper()
@@ -267,6 +269,14 @@ def parse_all_excel(files):
         except Exception as e:
             st.error(f'파일 파싱 중 예외 발생: {e}')
 
+    for b in all_boxes:
+        items = b.get('items', [])
+        box_colors = {it.get('color', 'DEFAULT') for it in items}
+        if len(box_colors) == 1:
+            b['color'] = list(box_colors)[0]
+        else:
+            b['color'] = 'MIX_COLOR'
+
     return all_boxes
 
 if uploaded_files:
@@ -281,8 +291,6 @@ if uploaded_files:
             qty_summary = defaultdict(lambda: defaultdict(lambda: {'boxes': 0, 'pcs': 0}))
             sku_mix_map = defaultdict(list)
 
-            # ⚠️ 핵심: 박스에 아이템 종류(컬러+사이즈)가 2개 이상 섞여 있으면 MIX 박스 (합적 대상)!
-            # 사용자의 불만: 동일 컬러 멀티사이즈 박스가 순수 박스로 취급되어 합적(MIX) 처리 되지 않았다.
             for b in raw_boxes:
                 p = b['prod']
                 unique_items = list({(it['color'], it['size']) for it in b['items']})
@@ -340,7 +348,6 @@ if uploaded_files:
                 summary_text_parts = []
                 p_start = p_counter
 
-                # 박스를 사이즈별로 정렬하여 동일 사이즈끼리 묶이도록 함
                 boxes_list.sort(key=lambda b: size_order.index(b['items'][0]['size']) if b['items'][0]['size'] in size_order else 99)
 
                 if not is_dispatch:
@@ -378,7 +385,6 @@ if uploaded_files:
                             summary_text_parts.append(f'[MIX] 1P ({rem_boxes_cnt}박스: {rem_sz_desc})')
                             p_counter += 1
                 else:
-                    # 1.B 송장 출고 모드 (사이즈별 독립 분할 최우선)
                     for sz in active_sizes:
                         sz_boxes = [b for b in boxes_list if b['items'][0]['size'] == sz]
                         sz_tot = len(sz_boxes)
@@ -514,7 +520,8 @@ if uploaded_files:
             cur_r = 6
             for row in order_summary_rows:
                 summary_text = row['summary']
-                line_count = summary_text.count('\n') + 1
+                line_count = summary_text.count('
+') + 1
                 calc_height = max(42.0, line_count * 22.0 + 15.0)
                 if len(summary_text) > 120: calc_height = max(calc_height, 75.0)
                 if len(summary_text) > 220: calc_height = max(calc_height, 105.0)
@@ -753,5 +760,5 @@ if uploaded_files:
                 label='🖼️ CAD 미니맵 이미지(.png) 다운로드',
                 data=img_buf,
                 file_name='언탭트_파레트하역_2D미니맵.png',
-                mime='image/png'
+                mime='application/png'
             )
