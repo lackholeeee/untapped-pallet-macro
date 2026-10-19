@@ -28,7 +28,7 @@ font_prop = get_korean_font()
 plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title='UNTAPPED 하역 작업 지시서 엔진', layout='wide', page_icon='📦')
-st.title('📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V33 (만능 동적 파서 및 3대 양식 통합 종결판)')
+st.title('📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V33 (완벽 무결 종결판)')
 st.markdown('패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계 카톡 요약문**, **2단계 4-시트 공식 엑셀(.xlsx)**, **3단계 2D CAD 미니맵**을 자동 생성합니다.')
 
 st.sidebar.header('⚙️ 하역 및 적재 조건 설정')
@@ -233,7 +233,7 @@ def parse_all_excel(files):
                             continue
                         else: empty_streak = 0
                         
-                        if pd.notna(p_val) and str(p_val).strip().upper().startswith(('MUN', 'DJ')) :
+                        if pd.notna(p_val) and str(p_val).strip().upper().startswith(('MUN', 'DJ')):
                             match = re.search(r'(MUN|DJ)\s*\d+[A-Z0-9]*', str(p_val).strip().upper())
                             if match: cur_prod = match.group(0).replace(' ', '')
                             else: cur_prod = str(p_val).strip().upper()
@@ -379,10 +379,10 @@ if uploaded_files:
                             rem_boxes = boxes_list[box_idx:]
                             rem_sz_desc = ', '.join([f"{s}-{sum(1 for b in rem_boxes if b['items'][0]['size']==s)}박스" for s in active_sizes if any(b['items'][0]['size']==s for b in rem_boxes)])
                             pallets.append({
-                                'p_num': f'P-{p_counter:02d}', 'code': prod, 'color': color, 'size': 'MIX',
+                                'p_num': f'P-{p_counter:02d}', 'code': prod, 'color': color, 'size': '자투리',
                                 'box_cnt': f'{rem_boxes_cnt}박스 ({rem_sz_desc})', 'is_mix': False, 'is_full': False
                             })
-                            summary_text_parts.append(f'[MIX] 1P ({rem_boxes_cnt}박스: {rem_sz_desc})')
+                            summary_text_parts.append(f'[자투리] 1P ({rem_boxes_cnt}박스: {rem_sz_desc})')
                             p_counter += 1
                 else:
                     for sz in active_sizes:
@@ -520,8 +520,7 @@ if uploaded_files:
             cur_r = 6
             for row in order_summary_rows:
                 summary_text = row['summary']
-                line_count = summary_text.count('
-') + 1
+                line_count = summary_text.count('\n') + 1
                 calc_height = max(42.0, line_count * 22.0 + 15.0)
                 if len(summary_text) > 120: calc_height = max(calc_height, 75.0)
                 if len(summary_text) > 220: calc_height = max(calc_height, 105.0)
@@ -760,5 +759,5 @@ if uploaded_files:
                 label='🖼️ CAD 미니맵 이미지(.png) 다운로드',
                 data=img_buf,
                 file_name='언탭트_파레트하역_2D미니맵.png',
-                mime='application/png'
+                mime='image/png'
             )
