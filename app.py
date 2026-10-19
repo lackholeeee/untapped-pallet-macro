@@ -27,7 +27,7 @@ font_prop = get_korean_font()
 plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="UNTAPPED 하역 작업 지시서 엔진", layout="wide", page_icon="📦")
-st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V11")
+st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V12")
 st.markdown("패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계 카톡 요약문**, **2단계 4-시트 공식 엑셀(.xlsx)**, **3단계 2D CAD 미니맵**을 자동 생성합니다.")
 
 st.sidebar.header("⚙️ 하역 및 적재 조건 설정")
@@ -221,7 +221,10 @@ def parse_all_excel(files):
     for b in all_boxes:
         colors = list({it.get('color', 'DEFAULT') for it in b.get('items', [])})
         if len(colors) == 1: b['color'] = colors[0]
-        else: b['color'] = "MIX_COLOR"
+        items = b.get('items', [])
+        colors = list({it.get('color', 'DEFAULT') for it in items})
+        if len(colors) == 1: b['color'] = colors[0]
+        else: b['color'] = items[0].get('color', 'DEFAULT') if items else 'MIX_COLOR'
 
     return all_boxes
 
