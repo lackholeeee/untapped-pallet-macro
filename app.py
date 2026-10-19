@@ -28,7 +28,7 @@ font_prop = get_korean_font()
 plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="UNTAPPED 하역 작업 지시서 엔진", layout="wide", page_icon="📦")
-st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V24 (3대 양식 통합 종결판)")
+st.title("📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 V26 (1P 상세 명기 및 MIX 명칭 확정판)")
 st.markdown("패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계 카톡 요약문**, **2단계 4-시트 공식 엑셀(.xlsx)**, **3단계 2D CAD 미니맵**을 자동 생성합니다.")
 
 st.sidebar.header("⚙️ 하역 및 적재 조건 설정")
@@ -63,7 +63,6 @@ def parse_all_excel(files):
         if '언탭트_현장총괄하역오더' in filename: continue
         try:
             xl = pd.ExcelFile(f)
-            # 1. 스타일별 멀티시트 양식 판단 (시트 이름이 숫자로만 구성된 경우)
             is_style_workbook = all(str(s).strip().isdigit() for s in xl.sheet_names)
             
             if is_style_workbook:
@@ -200,7 +199,7 @@ def parse_all_excel(files):
 
                         if row_items:
                             for b_i in range(box_count):
-                                p_name = f"{pkg_val}-{b_i+1}" if (pkg_val and box_count > 1) else (pkg_val if pkg_val else f"CTN-{len(all_boxes)+1}")
+                                p_name = f"{pkg_val}-{b_i+1}" if (pkg_val and box_count > 1) else (pkg_val if box_count else f"CTN-{len(all_boxes)+1}")
                                 all_boxes.append({'pkg': p_name, 'prod': cur_prod, 'items': row_items})
 
                 elif format_type == 'LIST':
@@ -262,7 +261,6 @@ def parse_all_excel(files):
 
     for b in all_boxes:
         items = b.get('items', [])
-        # ⚠️ 핵심 교정: 박스 내에 '서로 다른 컬러'가 2개 이상 섞여 있을 때만 진정한 MIX 박스로 판정! (다중 사이즈는 정상 순수 박스로 처리)
         box_colors = {it.get('color', 'DEFAULT') for it in items}
         if len(box_colors) == 1:
             b['color'] = list(box_colors)[0]
@@ -279,7 +277,7 @@ if uploaded_files:
         with st.spinner("파레트 적재 계산, 4-시트 엑셀 및 2D CAD 미니맵 렌더링 중..."):
             size_order = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL']
             mix_boxes = []
-            pure_by_sku = defaultdict(lambda: defaultdict(int))
+            pure_by_sku_grouped = defaultdict(list)
             qty_summary = defaultdict(lambda: defaultdict(lambda: {'boxes': 0, 'pcs': 0}))
             sku_mix_map = defaultdict(list)
 
@@ -292,21 +290,11 @@ if uploaded_files:
                 
                 if len(box_colors) == 1:
                     c = list(box_colors)[0]
-                    pure_by_sku[(p, c)][b['pkg']] = b['items']
-                    # Count total pure boxes per sku/color
-                    # Actually pure_by_sku can map to box list or count
+                    pure_by_sku_grouped[(p, c)].append(b)
                 else:
                     mix_boxes.append(b)
                     sku_mix_map[(p, 'MIX')].append(b)
 
-            # Let's re-map pure boxes properly by SKU and Color
-            pure_by_sku_grouped = defaultdict(list) # (p, c) -> list of boxes
-            for b in raw_boxes:
-                box_colors = {it['color'] for it in b['items']}
-                if len(box_colors) == 1:
-                    c = list(box_colors)[0]
-                    pure_by_sku_grouped[(b['prod'], c)].append(b)
-                    
             pallets = []
             p_counter = 1
 
@@ -340,17 +328,25 @@ if uploaded_files:
 
             for (prod, color), boxes_list in pure_by_sku_grouped.items():
                 tot_pure = len(boxes_list)
-                # Count total pcs for this sku/color
                 sku_size_pcs = defaultdict(int)
+                sku_size_boxes = defaultdict(int)
                 for b in boxes_list:
+                    # Determine sizes present in this box
+                    b_sizes = {it['size'] for it in b['items']}
                     for it in b['items']:
                         sku_size_pcs[it['size']] += it['qty']
-                        
+                    # For box counting per size, if a box has multiple sizes, attribute it or list it
+                    for sz in b_sizes:
+                        sku_size_boxes[sz] += 1
+
                 active_sizes = [s for s in size_order if sku_size_pcs[s] > 0]
                 summary_text_parts = []
                 p_start = p_counter
 
                 if not is_dispatch:
+                    # 모드 1.A: 단순 보관 (사이즈별 독립 1P 할당 또는 L_limit 단위 묶음, 상세 1P당 사이즈/수량 명기)
+                    # 현장에서 1P마다 어떤 사이즈가 들어있는지 명확히 알 수 있도록 사이즈별로 분할 또는 명시
+                    # 만약 총 박스가 L_limit 이하면 [ALL] 1P로 묶되 상세 박스수 명기
                     if tot_pure <= L_limit:
                         sz_summary_desc = ", ".join([f"{s}-{sum(1 for b in boxes_list if any(it['size']==s for it in b['items']))}박스" for s in active_sizes])
                         pallets.append({
@@ -365,39 +361,44 @@ if uploaded_files:
                         summary_text_parts.append(f"[ALL] 1P ({tot_pure}박스: {sz_summary_desc})")
                         p_counter += 1
                     else:
-                        # Group boxes into 완파레트 of size L_limit
+                        # 완파레트(L_limit 단위)와 MIX(자투리) 파레트로 분할하되, 각 1P마다 들어있는 사이즈/박스수를 명기!
                         full_pallets_cnt = tot_pure // L_limit
                         rem_boxes_cnt = tot_pure % L_limit
                         
-                        if full_pallets_cnt > 0:
-                            for _ in range(full_pallets_cnt):
-                                pallets.append({
-                                    'p_num': f"P-{p_counter:02d}",
-                                    'code': prod,
-                                    'color': color,
-                                    'size': "MULTI",
-                                    'box_cnt': f"{L_limit}박스 (완P)",
-                                    'is_mix': False,
-                                    'is_full': True
-                                })
-                                p_counter += 1
-                            summary_text_parts.append(f"[MULTI] {full_pallets_cnt}P ({full_pallets_cnt * L_limit}박스)")
+                        box_idx = 0
+                        for p_idx in range(full_pallets_cnt):
+                            p_boxes = boxes_list[box_idx : box_idx + L_limit]
+                            box_idx += L_limit
+                            p_sz_desc = ", ".join([f"{s}-{sum(1 for b in p_boxes if any(it['size']==s for it in b['items']))}박스" for s in active_sizes if any(any(it['size']==s for it in b['items']) for b in p_boxes)])
                             
-                        if rem_boxes_cnt > 0:
-                            rem_desc = ", ".join([f"{s}-{sum(1 for b in boxes_list[full_pallets_cnt*L_limit:] if any(it['size']==s for it in b['items']))}박스" for s in active_sizes if any(it['size']==s for it in boxes_list[full_pallets_cnt*L_limit:][0]['items'])]) # simplified
                             pallets.append({
                                 'p_num': f"P-{p_counter:02d}",
                                 'code': prod,
                                 'color': color,
-                                'size': "자투리",
-                                'box_cnt': f"{rem_boxes_cnt}박스 (잔여배정)",
+                                'size': "완P",
+                                'box_cnt': f"{len(p_boxes)}박스 ({p_sz_desc})",
+                                'is_mix': False,
+                                'is_full': True
+                            })
+                            summary_text_parts.append(f"[완P] 1P ({len(p_boxes)}박스: {p_sz_desc})")
+                            p_counter += 1
+                            
+                        if rem_boxes_cnt > 0:
+                            rem_boxes = boxes_list[box_idx:]
+                            rem_sz_desc = ", ".join([f"{s}-{sum(1 for b in rem_boxes if any(it['size']==s for it in b['items']))}박스" for s in active_sizes if any(any(it['size']==s for it in b['items']) for b in rem_boxes)])
+                            
+                            pallets.append({
+                                'p_num': f"P-{p_counter:02d}",
+                                'code': prod,
+                                'color': color,
+                                'size': "MIX",
+                                'box_cnt': f"{rem_boxes_cnt}박스 ({rem_sz_desc})",
                                 'is_mix': False,
                                 'is_full': False
                             })
-                            summary_text_parts.append(f"[자투리] 1P ({rem_boxes_cnt}박스)")
+                            summary_text_parts.append(f"[MIX] 1P ({rem_boxes_cnt}박스: {rem_sz_desc})")
                             p_counter += 1
                 else:
-                    # 1.B 송장 출고 모드
                     for _ in range((tot_pure + L_limit - 1) // L_limit):
                         pallets.append({
                             'p_num': f"P-{p_counter:02d}",
@@ -440,7 +441,7 @@ if uploaded_files:
                             'prod': prod, 
                             'color': c, 
                             'logic': "[지속 리오더 (순환 분산)]", 
-                            'sizes': f"{assigned_sz} (1장 최소 추출 / 순환분산 적용)"
+                            'sizes': f"{assigned_sz} (1장 최소 추출 / 실존 사이즈 내 순환분산 적용)"
                         })
 
             tot_all_boxes = len(raw_boxes)
@@ -496,7 +497,7 @@ if uploaded_files:
             ws1.row_dimensions[2].height = 18.0
 
             ws1.merge_cells("A3:E3")
-            ws1["A3"] = "※ 송장 출고/진열/보관 등 현장 목적에 따른 파레트 배정 요약 (멀티사이즈 정박스 및 신상 패킹 완벽 수용)"
+            ws1["A3"] = "※ 송장 출고/진열/보관 등 현장 목적에 따른 파레트 배정 요약 (1P당 세부 사이즈 명기 및 MIX 명칭 적용)"
             ws1["A3"].font = Font(name="Malgun Gothic", size=10.5, bold=True)
             ws1["A3"].alignment = Alignment(horizontal="center", vertical="center")
             ws1.row_dimensions[3].height = 21.95
@@ -527,7 +528,8 @@ if uploaded_files:
             cur_r = 6
             for row in order_summary_rows:
                 summary_text = row['summary']
-                line_count = summary_text.count('\n') + 1
+                line_count = summary_text.count('
+') + 1
                 calc_height = max(42.0, line_count * 22.0 + 15.0)
                 if len(summary_text) > 120: calc_height = max(calc_height, 75.0)
                 if len(summary_text) > 220: calc_height = max(calc_height, 105.0)
