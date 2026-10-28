@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import openpyxl
-from openpyxl.cell.rich_text import CellRichText, TextBlock
-from openpyxl.cell.text import InlineFont
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.worksheet.pagebreak import Break
 import matplotlib.pyplot as plt
@@ -153,7 +151,7 @@ def parse_all_excel(files):
                                     'items': box_items
                                 })
             else:
-                # Form 2: Style Workbook (Sheet names are 089, 130, etc.)
+                # Form 2: Style Workbook (Sheet names are digits like 144, 145, 158 or 089, 130)
                 is_style_workbook = all(str(s).strip().isdigit() for s in xl.sheet_names)
                 
                 if is_style_workbook:
@@ -163,7 +161,7 @@ def parse_all_excel(files):
                         
                         size_map = {}
                         size_row_idx = -1
-                        for r_idx in range(min(10, len(df))):
+                        for r_idx in range(min(15, len(df))):
                             row_vals = [str(v).strip().upper() for v in df.iloc[r_idx].values if pd.notna(v)]
                             found = [s for s in size_candidates if s in row_vals]
                             if len(found) >= 1:
@@ -174,8 +172,8 @@ def parse_all_excel(files):
                                 break
                         else: continue
                             
-                        ct_col, color_col, box_cnt_col = 1, 4, 9
-                        for r_idx in range(min(10, len(df))):
+                        ct_col, color_col, box_cnt_col = 1, 4, 10
+                        for r_idx in range(min(15, len(df))):
                             for c_idx, val in enumerate(df.iloc[r_idx].values):
                                 if pd.notna(val):
                                     v_str = str(val).strip().upper()
@@ -430,7 +428,6 @@ if uploaded_files:
                     if len(b_szs) == 1:
                         size_box_counts[list(b_szs)[0]] += 1
 
-                # Is it an assortment format (every box has multiple sizes) or pure size boxes?
                 is_pure_size_boxes = (sum(size_box_counts.values()) == tot_pure)
                 p_start = p_counter
                 row_lines = []
@@ -442,7 +439,7 @@ if uploaded_files:
                             'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': 'ALL',
                             'boxes': tot_pure, 'desc': f'{tot_pure}박스 (어소트 혼합박스)', 'type': 'ALL', 'is_full': (tot_pure == L_limit)
                         })
-                        row_lines.append(('[ALL] 1P', f' ({tot_pure}박스 어소트)'))
+                        row_lines.append(f'[ALL] 1P ({tot_pure}박스 어소트)')
                         p_counter += 1
                     else:
                         full_p = tot_pure // L_limit
@@ -452,14 +449,14 @@ if uploaded_files:
                                 'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': '완P',
                                 'boxes': L_limit, 'desc': f'{L_limit}박스 (완P)', 'type': '완P', 'is_full': True
                             })
-                            row_lines.append(('[완P] 1P', f' ({L_limit}박스)'))
+                            row_lines.append(f'[완P] 1P ({L_limit}박스)')
                             p_counter += 1
                         if rem_b > 0:
                             pallets.append({
                                 'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': '자투리',
                                 'boxes': rem_b, 'desc': f'{rem_b}박스 (자투리)', 'type': '자투리', 'is_full': False
                             })
-                            row_lines.append(('[자투리] 1P', f' ({rem_b}박스)'))
+                            row_lines.append(f'[자투리] 1P ({rem_b}박스)')
                             p_counter += 1
                 else:
                     # Pure single-size boxes: Strict Non-Split rule!
@@ -471,11 +468,10 @@ if uploaded_files:
                                 'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': 'ALL',
                                 'boxes': tot_pure, 'desc': f'{tot_pure}박스: {sz_desc}', 'type': 'ALL', 'is_full': (tot_pure == L_limit)
                             })
-                            row_lines.append(('[ALL] 1P', f' ({tot_pure}박스: {sz_desc})'))
+                            row_lines.append(f'[ALL] 1P ({tot_pure}박스: {sz_desc})')
                             p_counter += 1
                         else:
                             # Total > L_limit: Maintain size integrity!
-                            # 1) Handle sizes >= L_limit
                             remaining_chunks = []
                             for sz in active_sizes:
                                 cnt = size_box_counts[sz]
@@ -490,7 +486,7 @@ if uploaded_files:
                                             'boxes': L_limit + 1, 'desc': f'{L_limit}박스 완P + ★{sz}-1박스 합적 (총 {L_limit+1}박스)',
                                             'type': '완P+합적', 'is_full': True
                                         })
-                                        row_lines.append((f'[{sz}] 1P', f' ({L_limit}박스 완P + ★{sz}-1박스 합적)'))
+                                        row_lines.append(f'[{sz}] 1P ({L_limit}박스 완P + ★{sz}-1박스 합적)')
                                         p_counter += 1
                                     else:
                                         for _ in range(n_full):
@@ -498,14 +494,14 @@ if uploaded_files:
                                                 'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': sz,
                                                 'boxes': L_limit, 'desc': f'{L_limit}박스 (완P)', 'type': '완P', 'is_full': True
                                             })
-                                            row_lines.append((f'[{sz}] 1P', f' ({L_limit}박스 완P)'))
+                                            row_lines.append(f'[{sz}] 1P ({L_limit}박스 완P)')
                                             p_counter += 1
                                         if rem > 0:
                                             remaining_chunks.append((sz, rem))
                                 else:
                                     remaining_chunks.append((sz, cnt))
                             
-                            # 2) Pack remaining chunks without splitting
+                            # Pack remaining chunks without splitting
                             cur_p_chunks = []
                             cur_sum = 0
                             for sz, cnt in remaining_chunks:
@@ -513,14 +509,13 @@ if uploaded_files:
                                     cur_p_chunks.append((sz, cnt))
                                     cur_sum += cnt
                                 else:
-                                    # Emit current pallet
                                     tag = "+".join([s for s, c in cur_p_chunks])
                                     desc = ", ".join([f"{s}-{c}박스" for s, c in cur_p_chunks])
                                     pallets.append({
                                         'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': tag,
                                         'boxes': cur_sum, 'desc': f'{cur_sum}박스: {desc}', 'type': tag, 'is_full': (cur_sum == L_limit)
                                     })
-                                    row_lines.append((f'[{tag}] 1P', f' ({cur_sum}박스: {desc})'))
+                                    row_lines.append(f'[{tag}] 1P ({cur_sum}박스: {desc})')
                                     p_counter += 1
                                     cur_p_chunks = [(sz, cnt)]
                                     cur_sum = cnt
@@ -531,7 +526,7 @@ if uploaded_files:
                                     'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': tag,
                                     'boxes': cur_sum, 'desc': f'{cur_sum}박스: {desc}', 'type': tag, 'is_full': (cur_sum == L_limit)
                                 })
-                                row_lines.append((f'[{tag}] 1P', f' ({cur_sum}박스: {desc})'))
+                                row_lines.append(f'[{tag}] 1P ({cur_sum}박스: {desc})')
                                 p_counter += 1
                     else:
                         # 1.B Dispatch Mode (Zero De-stacking, pure size pallets)
@@ -545,14 +540,14 @@ if uploaded_files:
                                     'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': sz,
                                     'boxes': L_limit, 'desc': f'{L_limit}박스 (완P 직배송)', 'type': '완P', 'is_full': True
                                 })
-                                row_lines.append((f'[{sz}] 1P', f' ({L_limit}박스 완P)'))
+                                row_lines.append(f'[{sz}] 1P ({L_limit}박스 완P)')
                                 p_counter += 1
                             if rem > 0:
                                 pallets.append({
                                     'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': sz,
                                     'boxes': rem, 'desc': f'{rem}박스 (피킹 전용 단독P)', 'type': sz, 'is_full': False
                                 })
-                                row_lines.append((f'[{sz}] 1P', f' ({rem}박스 단독P)'))
+                                row_lines.append(f'[{sz}] 1P ({rem}박스 단독P)')
                                 p_counter += 1
 
                 p_assigned = p_counter - p_start
@@ -582,7 +577,6 @@ if uploaded_files:
                         chosen_sz = act_szs[sample_counter % len(act_szs)]
                         sample_counter += 1
                         
-                        # Find loose/remainder pallet for this SKU & color
                         matching_p = [p['p_num'] for p in pallets if p['prod'] == prod and p['color'] == c and not p.get('is_full', False)]
                         source_p = matching_p[0] if matching_p else [p['p_num'] for p in pallets if p['prod'] == prod and p['color'] == c][0]
                         
@@ -616,8 +610,8 @@ if uploaded_files:
                 if r.get('is_mix'):
                     lines_kakao.append(f'  • {r["mix_text"]}')
                 else:
-                    for tag, desc in r['lines']:
-                        lines_kakao.append(f'  • {tag}{desc}')
+                    for line_txt in r['lines']:
+                        lines_kakao.append(f'  • {line_txt}')
                 lines_kakao.append('')
 
             kakao_text = '\n'.join(lines_kakao)
@@ -680,28 +674,6 @@ if uploaded_files:
                 c.alignment = Alignment(horizontal="center", vertical="center")
                 c.border = thin_border
 
-            def make_rich_summary(row_info):
-                rt = CellRichText()
-                if row_info.get('is_mix'):
-                    text = row_info['mix_text']
-                    first_line = text.split("\n")[0]
-                    rest = "\n" + "\n".join(text.split("\n")[1:])
-                    rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=18.0, b=True, color="B91C1C"), first_line))
-                    rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=11.0, b=False, color="000000"), rest))
-                else:
-                    for idx, (bold_tag, regular_text) in enumerate(row_info['lines']):
-                        if idx > 0:
-                            rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=11.0, b=False, color="000000"), "\n"))
-                        color = "B91C1C" if ("★" in bold_tag or "다색혼적" in bold_tag or "도크초입" in bold_tag) else "000000"
-                        rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=18.0, b=True, color=color), bold_tag))
-                        if "★" in regular_text:
-                            parts = regular_text.split("★")
-                            rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=11.0, b=False, color="000000"), parts[0]))
-                            rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=11.0, b=True, color="B91C1C"), "★" + parts[1]))
-                        else:
-                            rt.append(TextBlock(InlineFont(rFont="Malgun Gothic", sz=11.0, b=False, color="000000"), regular_text))
-                return rt
-
             cur_r = 6
             prod_row_indices = {}
 
@@ -712,10 +684,12 @@ if uploaded_files:
                 prod_row_indices[p].append(cur_r)
                 
                 if row_info.get('is_mix'):
+                    summary_text = row_info['mix_text']
                     ws1.row_dimensions[cur_r].height = 180.0
                 else:
+                    summary_text = "\n".join(row_info['lines'])
                     n_lines = len(row_info['lines'])
-                    ws1.row_dimensions[cur_r].height = 36.0 if n_lines <= 1 else (n_lines * 24.0 + 12.0)
+                    ws1.row_dimensions[cur_r].height = max(36.0, n_lines * 22.0 + 12.0)
                     
                 ws1.cell(cur_r, 1, row_info['prod']).font = Font(name="Malgun Gothic", size=12.0, bold=True)
                 ws1.cell(cur_r, 2, row_info['color']).font = Font(name="Malgun Gothic", size=11.0, bold=True)
@@ -725,7 +699,10 @@ if uploaded_files:
                 c_p.fill = PatternFill(start_color="EFF6FF", end_color="EFF6FF", fill_type="solid")
                 
                 ws1.cell(cur_r, 4, row_info['boxes']).font = Font(name="Malgun Gothic", size=11.0, bold=True)
-                ws1.cell(cur_r, 5, make_rich_summary(row_info))
+                
+                # Use standard string with wrap_text=True to guarantee 100% compatibility with all Excel versions (Excel 2010+)
+                c_summary = ws1.cell(cur_r, 5, summary_text)
+                c_summary.font = Font(name="Malgun Gothic", size=11.0, bold=True)
                 
                 for c in range(1, 6):
                     ws1.cell(cur_r, c).border = thin_border
