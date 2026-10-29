@@ -29,9 +29,9 @@ def get_korean_font():
 font_prop = get_korean_font()
 plt.rcParams['axes.unicode_minus'] = False
 
-st.set_page_config(page_title='UNTAPPED 하역 작업 지시서 엔진', layout='wide', page_icon='📦')
-st.title('📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 (만능 자동화 엔진)')
-st.markdown('어떠한 거래처/공장의 패킹리스트 엑셀 파일을 업로드하더라도 **1단계: 카톡 요약문**, **2단계: 단 1개의 3-시트 공식 엑셀(.xlsx)**, **3단계: 흑백 인쇄 최적화 CAD 미니맵**을 일괄 자동 생성합니다.')
+st.set_page_config(page_title='UNTAPPED 물류 자동화 통합 엔진', layout='wide', page_icon='📦')
+st.title('📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 (공식 백엔드 엔진)')
+st.markdown('패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계: 카톡 요약문**, **2단계: 단 1개의 3-시트 공식 엑셀(.xlsx)**, **3단계: 흑백 인쇄 최적화 CAD 미니맵**을 일괄 자동 생성합니다.')
 
 st.sidebar.header('⚙️ 5대 하역 및 적재 조건 설정')
 work_purpose = st.sidebar.radio('1. 작업 목적 선택', [
@@ -52,10 +52,11 @@ mix_option = st.sidebar.radio('3. MIX(혼적) 적재 방식', [
 new_items_input = st.sidebar.text_input('4. 초도 신상품 상품코드 (공란 시 100% 지속 리오더)', '')
 urgent_input = st.sidebar.text_input('5. 긴급 출고 건 유무 (선택: 특정 코드/컬러/사이즈)', '')
 
-L_limit = custom_limit if custom_limit else (16 if '16' in box_limit_preset else (12 if '12' in box_limit_preset else 9))
+default_L = custom_limit if custom_limit else (16 if '16' in box_limit_preset else (12 if '12' in box_limit_preset else 9))
 is_dispatch = '1.B' in work_purpose
 is_mix_quarantine = '3.A' in mix_option
 initial_skus = [x.strip().upper() for x in re.split(r'[,/\s]+', new_items_input) if x.strip()]
+urgent_skus = [x.strip().upper() for x in re.split(r'[,/\s]+', urgent_input) if x.strip()]
 
 uploaded_files = st.file_uploader('📥 패킹리스트 엑셀 업로드 (다중 파일 지원)', type=['xlsx', 'xls'], accept_multiple_files=True)
 
@@ -69,7 +70,7 @@ def parse_all_excel(files):
         try:
             xl = pd.ExcelFile(f)
             
-            # Form 1: Summary Table format (e.g. '요약' in sheet or header with 품번, 컬러, 사이즈, 박스)
+            # Form 1: 요약표형 (시트명에 '요약' 또는 헤더에 품번/박스)
             is_summary_table = any('요약' in str(s) or 'SUMMARY' in str(s).upper() for s in xl.sheet_names)
             if not is_summary_table:
                 df_chk = xl.parse(xl.sheet_names[0], header=None)
@@ -148,10 +149,11 @@ def parse_all_excel(files):
                                     'pkg': f"{p_str}-{c_str}-CTN-{b_i+1}",
                                     'prod': p_str,
                                     'color': c_str,
-                                    'items': box_items
+                                    'items': box_items,
+                                    'raw_title': p_str
                                 })
             else:
-                # Form 2: Style Workbook (Sheet names are digits like 144, 145, 158 or 089, 130)
+                # Form 2: Style Workbook (시트명이 숫자인 형태: 144, 145, 158 등)
                 is_style_workbook = all(str(s).strip().isdigit() for s in xl.sheet_names)
                 
                 if is_style_workbook:
@@ -209,9 +211,9 @@ def parse_all_excel(files):
                             if row_items:
                                 for b_i in range(box_count):
                                     p_name = f'{prod}-{sheet}-CTN-{ct_num}' if box_count == 1 else f'{prod}-{sheet}-CTN-{ct_num}-{b_i+1}'
-                                    all_boxes.append({'pkg': p_name, 'prod': prod, 'items': row_items})
+                                    all_boxes.append({'pkg': p_name, 'prod': prod, 'items': row_items, 'raw_title': prod})
                 else:
-                    # Form 3 & 4: General Horizontal Matrix or Vertical List
+                    # Form 3 & 4: 일반 가로 매트릭스형 또는 세로 리스트형
                     target_sheet = xl.sheet_names[0]
                     for s in xl.sheet_names:
                         if any(k in s.upper() for k in ['MUN', '패킹', '출고', '입고', 'DETAIL']):
@@ -258,6 +260,7 @@ def parse_all_excel(files):
                                     if any(k in v_str for k in ['패킹', '箱号', 'CTN', '박스번호', 'CTNO']): pkg_col = c
                                     if any(k in v_str for k in ['箱数', '박스수', 'CTNS', 'CNT']): box_cnt_col = c
 
+                        raw_prod_title = ""
                         for r in range(header_row_idx + 1, len(df)):
                             row = df.iloc[r]
                             row_str = ' '.join([str(v) for v in row.values if pd.notna(v)])
@@ -272,7 +275,9 @@ def parse_all_excel(files):
                                 c_up = c_val.upper()
                                 if any(c_up.startswith(p) for p in ['MUN', 'DJ']):
                                     match = re.search(r'(MUN|DJ)\s*\d+[A-Z0-9]*', c_up)
-                                    if match: cur_prod = match.group(0).replace(' ', '')
+                                    if match:
+                                        cur_prod = match.group(0).replace(' ', '')
+                                        raw_prod_title = c_val
                                     rest = c_up[len(match.group(0)):].strip() if match else ''
                                     rest = re.sub(r'[^A-Z\s]', '', rest).strip()
                                     if rest and not any(k in rest for k in ['총', '박스', '합']): cur_color = rest
@@ -300,11 +305,12 @@ def parse_all_excel(files):
                             if row_items:
                                 for b_i in range(box_count):
                                     p_name = f'{pkg_val}-{b_i+1}' if box_count > 1 else pkg_val
-                                    all_boxes.append({'pkg': p_name, 'prod': cur_prod, 'items': row_items})
+                                    all_boxes.append({'pkg': p_name, 'prod': cur_prod, 'items': row_items, 'raw_title': raw_prod_title})
 
                     elif format_type == 'LIST':
                         cur_prod, cur_color = 'MUN_ITEM', 'DEFAULT'
                         prev_pkg, empty_streak = None, 0
+                        raw_prod_title = ""
 
                         for r in range(header_row_idx + 1, len(df)):
                             row = df.iloc[r]
@@ -327,6 +333,7 @@ def parse_all_excel(files):
                                 match = re.search(r'(MUN|DJ)\s*\d+[A-Z0-9]*', str(p_val).strip().upper())
                                 if match: cur_prod = match.group(0).replace(' ', '')
                                 else: cur_prod = str(p_val).strip().upper()
+                                raw_prod_title = str(p_val).strip()
                                 
                             if pd.notna(c_val) and not any(k in str(c_val) for k in ['총', '박스', '합', '合计']):
                                 c_up = str(c_val).strip().upper()
@@ -346,20 +353,27 @@ def parse_all_excel(files):
                                         if pkg_str == prev_pkg and all_boxes:
                                             all_boxes[-1]['items'].append({'color': cur_color, 'size': sz, 'qty': q_int})
                                         else:
-                                            all_boxes.append({'pkg': pkg_str, 'prod': cur_prod, 'items': [{'color': cur_color, 'size': sz, 'qty': q_int}]})
+                                            all_boxes.append({'pkg': pkg_str, 'prod': cur_prod, 'items': [{'color': cur_color, 'size': sz, 'qty': q_int}], 'raw_title': raw_prod_title})
                                         prev_pkg = pkg_str
                                     else:
                                         if prev_pkg and all_boxes:
                                             all_boxes[-1]['items'].append({'color': cur_color, 'size': sz, 'qty': q_int})
                                         else:
                                             pkg_str = f'CTN-{len(all_boxes)+1}'
-                                            all_boxes.append({'pkg': pkg_str, 'prod': cur_prod, 'items': [{'color': cur_color, 'size': sz, 'qty': q_int}]})
+                                            all_boxes.append({'pkg': pkg_str, 'prod': cur_prod, 'items': [{'color': cur_color, 'size': sz, 'qty': q_int}], 'raw_title': raw_prod_title})
                                             prev_pkg = pkg_str
                             except: pass
         except Exception as e:
             st.error(f'파일 파싱 중 예외 발생: {e}')
 
     return all_boxes
+
+# 품목별 지능형 L값 결정 함수 (MUN039, 패딩, 다운 감지 시 자동 L=12 적용)
+def get_item_L_limit(prod, raw_title, default_L):
+    search_str = f"{prod} {raw_title}".upper()
+    if '039' in search_str or '패딩' in search_str or '푸퍼' in search_str or '다운' in search_str:
+        return min(default_L, 12)
+    return default_L
 
 if uploaded_files:
     raw_boxes = parse_all_excel(uploaded_files)
@@ -377,7 +391,7 @@ if uploaded_files:
                 for it in b['items']:
                     qty_summary[(b['prod'], it['color'])][it['size']]['pcs'] += it['qty']
                 
-                # Multi-color mix vs pure SKU
+                # 순수 단일컬러 vs 다색 혼적
                 if len(colors) > 1:
                     mix_boxes.append(b)
                 else:
@@ -387,7 +401,7 @@ if uploaded_files:
             pallets = []
             p_counter = 1
 
-            # Option 3.A: Quarantine MIX boxes to P-01
+            # 3.A 선택 시: MIX 박스를 도크 초입 P-01로 단독 격리
             order_summary_rows = []
             if is_mix_quarantine and mix_boxes:
                 pallets.append({
@@ -420,8 +434,10 @@ if uploaded_files:
             for (prod, color), boxes_list in pure_by_sku_grouped.items():
                 tot_pure = len(boxes_list)
                 active_sizes = [s for s in size_order if qty_summary[(prod, color)][s]['pcs'] > 0]
+                raw_title = boxes_list[0].get('raw_title', '') if boxes_list else ''
+                sku_L = get_item_L_limit(prod, raw_title, default_L)
                 
-                # Check pure box counts per size
+                # 단일 사이즈 박스 수량 집계
                 size_box_counts = defaultdict(int)
                 for b in boxes_list:
                     b_szs = {it['size'] for it in b['items']}
@@ -433,23 +449,23 @@ if uploaded_files:
                 row_lines = []
 
                 if not is_pure_size_boxes:
-                    # Assortment / Multi-size boxes
-                    if tot_pure <= L_limit:
+                    # 어소트 박스 (박스 안에 여러 사이즈가 섞인 형태)
+                    if tot_pure <= sku_L:
                         pallets.append({
                             'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': 'ALL',
-                            'boxes': tot_pure, 'desc': f'{tot_pure}박스 (어소트 혼합박스)', 'type': 'ALL', 'is_full': (tot_pure == L_limit)
+                            'boxes': tot_pure, 'desc': f'{tot_pure}박스 (어소트 혼합박스)', 'type': 'ALL', 'is_full': (tot_pure == sku_L)
                         })
                         row_lines.append(f'[ALL] 1P ({tot_pure}박스 어소트)')
                         p_counter += 1
                     else:
-                        full_p = tot_pure // L_limit
-                        rem_b = tot_pure % L_limit
+                        full_p = tot_pure // sku_L
+                        rem_b = tot_pure % sku_L
                         for _ in range(full_p):
                             pallets.append({
                                 'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': '완P',
-                                'boxes': L_limit, 'desc': f'{L_limit}박스 (완P)', 'type': '완P', 'is_full': True
+                                'boxes': sku_L, 'desc': f'{sku_L}박스 (완P)', 'type': '완P', 'is_full': True
                             })
-                            row_lines.append(f'[완P] 1P ({L_limit}박스)')
+                            row_lines.append(f'[완P] 1P ({sku_L}박스)')
                             p_counter += 1
                         if rem_b > 0:
                             pallets.append({
@@ -459,53 +475,53 @@ if uploaded_files:
                             row_lines.append(f'[자투리] 1P ({rem_b}박스)')
                             p_counter += 1
                 else:
-                    # Pure single-size boxes: Strict Non-Split rule!
+                    # 단일 사이즈 박스: 동일 사이즈 쪼개기 까대기 방지 규칙 적용
                     if not is_dispatch:
-                        # 1.A Simple Storage
-                        if tot_pure <= L_limit:
+                        # 1.A 단순 보관 모드
+                        if tot_pure <= sku_L:
                             sz_desc = ', '.join([f'{s}-{size_box_counts[s]}박스' for s in active_sizes if size_box_counts[s] > 0])
                             pallets.append({
                                 'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': 'ALL',
-                                'boxes': tot_pure, 'desc': f'{tot_pure}박스: {sz_desc}', 'type': 'ALL', 'is_full': (tot_pure == L_limit)
+                                'boxes': tot_pure, 'desc': f'{tot_pure}박스: {sz_desc}', 'type': 'ALL', 'is_full': (tot_pure == sku_L)
                             })
                             row_lines.append(f'[ALL] 1P ({tot_pure}박스: {sz_desc})')
                             p_counter += 1
                         else:
-                            # Total > L_limit: Maintain size integrity!
+                            # T > sku_L: 사이즈 덩어리 보존 적재
                             remaining_chunks = []
                             for sz in active_sizes:
                                 cnt = size_box_counts[sz]
                                 if cnt == 0: continue
-                                if cnt >= L_limit:
-                                    n_full = cnt // L_limit
-                                    rem = cnt % L_limit
-                                    # If rem == 1, merge with full pallet as +★1박스 합적!
+                                if cnt >= sku_L:
+                                    n_full = cnt // sku_L
+                                    rem = cnt % sku_L
+                                    # 초과분이 1박스인 경우: 완P 상단에 +★1박스 합적 표기
                                     if rem == 1:
                                         pallets.append({
                                             'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': sz,
-                                            'boxes': L_limit + 1, 'desc': f'{L_limit}박스 완P + ★{sz}-1박스 합적 (총 {L_limit+1}박스)',
+                                            'boxes': sku_L + 1, 'desc': f'{sku_L}박스 완P + ★{sz}-1박스 합적 (총 {sku_L+1}박스)',
                                             'type': '완P+합적', 'is_full': True
                                         })
-                                        row_lines.append(f'[{sz}] 1P ({L_limit}박스 완P + ★{sz}-1박스 합적)')
+                                        row_lines.append(f'[{sz}] 1P ({sku_L}박스 완P + ★{sz}-1박스 합적)')
                                         p_counter += 1
                                     else:
                                         for _ in range(n_full):
                                             pallets.append({
                                                 'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': sz,
-                                                'boxes': L_limit, 'desc': f'{L_limit}박스 (완P)', 'type': '완P', 'is_full': True
+                                                'boxes': sku_L, 'desc': f'{sku_L}박스 (완P)', 'type': '완P', 'is_full': True
                                             })
-                                            row_lines.append(f'[{sz}] 1P ({L_limit}박스 완P)')
+                                            row_lines.append(f'[{sz}] 1P ({sku_L}박스 완P)')
                                             p_counter += 1
                                         if rem > 0:
                                             remaining_chunks.append((sz, rem))
                                 else:
                                     remaining_chunks.append((sz, cnt))
                             
-                            # Pack remaining chunks without splitting
+                            # 잔여 사이즈 청크들을 쪼개지 않고 배정
                             cur_p_chunks = []
                             cur_sum = 0
                             for sz, cnt in remaining_chunks:
-                                if cur_sum + cnt <= L_limit:
+                                if cur_sum + cnt <= sku_L:
                                     cur_p_chunks.append((sz, cnt))
                                     cur_sum += cnt
                                 else:
@@ -513,7 +529,7 @@ if uploaded_files:
                                     desc = ", ".join([f"{s}-{c}박스" for s, c in cur_p_chunks])
                                     pallets.append({
                                         'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': tag,
-                                        'boxes': cur_sum, 'desc': f'{cur_sum}박스: {desc}', 'type': tag, 'is_full': (cur_sum == L_limit)
+                                        'boxes': cur_sum, 'desc': f'{cur_sum}박스: {desc}', 'type': tag, 'is_full': (cur_sum == sku_L)
                                     })
                                     row_lines.append(f'[{tag}] 1P ({cur_sum}박스: {desc})')
                                     p_counter += 1
@@ -524,23 +540,23 @@ if uploaded_files:
                                 desc = ", ".join([f"{s}-{c}박스" for s, c in cur_p_chunks])
                                 pallets.append({
                                     'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': tag,
-                                    'boxes': cur_sum, 'desc': f'{cur_sum}박스: {desc}', 'type': tag, 'is_full': (cur_sum == L_limit)
+                                    'boxes': cur_sum, 'desc': f'{cur_sum}박스: {desc}', 'type': tag, 'is_full': (cur_sum == sku_L)
                                 })
                                 row_lines.append(f'[{tag}] 1P ({cur_sum}박스: {desc})')
                                 p_counter += 1
                     else:
-                        # 1.B Dispatch Mode (Zero De-stacking, pure size pallets)
+                        # 1.B 송장 출고 모드 (사이즈별 단독 파레트)
                         for sz in active_sizes:
                             cnt = size_box_counts[sz]
                             if cnt == 0: continue
-                            n_full = cnt // L_limit
-                            rem = cnt % L_limit
+                            n_full = cnt // sku_L
+                            rem = cnt % sku_L
                             for _ in range(n_full):
                                 pallets.append({
                                     'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': sz,
-                                    'boxes': L_limit, 'desc': f'{L_limit}박스 (완P 직배송)', 'type': '완P', 'is_full': True
+                                    'boxes': sku_L, 'desc': f'{sku_L}박스 (완P 직배송)', 'type': '완P', 'is_full': True
                                 })
-                                row_lines.append(f'[{sz}] 1P ({L_limit}박스 완P)')
+                                row_lines.append(f'[{sz}] 1P ({sku_L}박스 완P)')
                                 p_counter += 1
                             if rem > 0:
                                 pallets.append({
@@ -556,7 +572,7 @@ if uploaded_files:
                     'is_mix': False, 'lines': row_lines
                 })
 
-            # Sample Extraction: Anti-Monopoly Round-Robin rule
+            # 샘플 균등 추출: Anti-Monopoly 순환 분산
             sample_guide = []
             all_skus = list(dict.fromkeys([p for p, _ in pure_by_sku_grouped.keys()]))
             sample_counter = 0
@@ -592,7 +608,7 @@ if uploaded_files:
             lines_kakao = []
             lines_kakao.append(f'[UNTAPPED 총괄 하역 오더 요약 ({work_purpose.split()[0]} / 동일 사이즈 비분할)]')
             lines_kakao.append(f'- 대상 화물: {len(all_skus)}개 품목 / 총 {tot_all_boxes}박스 ({tot_all_pcs:,}장 전수 일치)')
-            lines_kakao.append(f'- 적재 규격: 완P 한도 L={L_limit}박스 기준')
+            lines_kakao.append(f'- 적재 규격: 완P 한도 L={default_L}박스 기준 (패딩 감지 시 L=12 자동 적용)')
             lines_kakao.append(f'- 작업 모드: {work_purpose.split()[0]} | MIX 처리: {mix_option.split()[0]}')
             lines_kakao.append(f'- 총 파레트 수: 총 {len(pallets)}P')
             lines_kakao.append('=' * 80)
@@ -647,7 +663,7 @@ if uploaded_files:
             ws1.row_dimensions[1].height = 27.95
 
             ws1.merge_cells("A2:E2")
-            ws1["A2"] = f"화물: 총 {tot_all_boxes}박스 ({tot_all_pcs:,}장) │ 규격: 완P 한도 L={L_limit}박스 │ 총 {len(pallets)}P (동일 사이즈 비분할 적재)"
+            ws1["A2"] = f"화물: 총 {tot_all_boxes}박스 ({tot_all_pcs:,}장) │ 규격: 완P 한도 L={default_L}박스 │ 총 {len(pallets)}P (동일 사이즈 비분할 적재)"
             ws1["A2"].font = Font(name="Malgun Gothic", size=10.0, color="1E293B")
             ws1["A2"].alignment = Alignment(horizontal="center", vertical="center")
             ws1.row_dimensions[2].height = 18.0
@@ -656,7 +672,7 @@ if uploaded_files:
             double_bottom_border = Border(top=Side(style='thin'), bottom=Side(style='double'), left=Side(style='thin'), right=Side(style='thin'))
 
             ws1.merge_cells("A3:E3")
-            ws1["A3"] = f"※ 작업 목적: [{work_purpose.split()[0]}] │ 적재 한도: [L={L_limit}박스 완P] │ MIX 방식: [{mix_option.split()[0]}] │ 동일 사이즈 쪼개기 까대기 원천 배제"
+            ws1["A3"] = f"※ 작업 목적: [{work_purpose.split()[0]}] │ 적재 한도: [L={default_L}박스 완P] │ MIX 방식: [{mix_option.split()[0]}] │ 동일 사이즈 쪼개기 까대기 원천 배제"
             ws1["A3"].font = Font(name="Malgun Gothic", size=10.5, bold=True)
             ws1["A3"].alignment = Alignment(horizontal="center", vertical="center")
             ws1.row_dimensions[3].height = 21.95
@@ -700,7 +716,7 @@ if uploaded_files:
                 
                 ws1.cell(cur_r, 4, row_info['boxes']).font = Font(name="Malgun Gothic", size=11.0, bold=True)
                 
-                # Use standard string with wrap_text=True to guarantee 100% compatibility with all Excel versions (Excel 2010+)
+                # Excel 2010 완벽 호환 표준 다중행 텍스트
                 c_summary = ws1.cell(cur_r, 5, summary_text)
                 c_summary.font = Font(name="Malgun Gothic", size=11.0, bold=True)
                 
