@@ -11,7 +11,6 @@ import re
 import os
 from collections import defaultdict, OrderedDict
 
-# 폰트 설정
 @st.cache_resource
 def get_korean_font():
     paths = [
@@ -32,7 +31,7 @@ plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title='UNTAPPED 물류 자동화 통합 엔진', layout='wide', page_icon='📦')
 st.title('📦 UNTAPPED STUDIO 하역 작업 지시서 매크로 (공식 백엔드 엔진)')
-st.markdown('패킹리스트 엑셀 파일을 업로드하고 조건을 선택하면 **1단계: 카톡 요약문**, **2단계: 단 1개의 3-시트 공식 엑셀(.xlsx)**, **3단계: 흑백 인쇄 최적화 CAD 미니맵**을 일괄 자동 생성합니다.')
+st.markdown('어떠한 거래처/공장의 패킹리스트 엑셀 파일을 업로드하더라도 **1단계: 카톡 요약문**, **2단계: 단 1개의 3-시트 공식 엑셀(.xlsx)**, **3단계: 흑백 인쇄 최적화 CAD 미니맵**을 일괄 자동 생성합니다.')
 
 st.sidebar.header('⚙️ 5대 하역 및 적재 조건 설정')
 work_purpose = st.sidebar.radio('1. 작업 목적 선택', [
@@ -42,7 +41,7 @@ work_purpose = st.sidebar.radio('1. 작업 목적 선택', [
 box_limit_preset = st.sidebar.selectbox('2. 박스 규격 및 완P 한도(L)', [
     'L=16 (일반 표준 박스 / 600*400*350 / 4단)',
     'L=12 (다꾸앙 패딩 및 자켓 / 600*400*530 / 3단)',
-    'L=9 (양홍 코트 등 대형 박스)',
+    'L=8 (양홍 코트 등 대형 박스 / 실질 적재 기준)',
     '직접 수기 입력'
 ])
 custom_limit = st.sidebar.number_input('수기 입력 (L)', min_value=1, max_value=40, value=16) if '수기' in box_limit_preset else None
@@ -53,10 +52,11 @@ mix_option = st.sidebar.radio('3. MIX(혼적) 적재 방식', [
 new_items_input = st.sidebar.text_input('4. 초도 신상품 상품코드 (공란 시 100% 지속 리오더)', '')
 urgent_input = st.sidebar.text_input('5. 긴급 출고 건 유무 (선택: 특정 코드/컬러/사이즈)', '')
 
-default_L = custom_limit if custom_limit else (16 if '16' in box_limit_preset else (12 if '12' in box_limit_preset else 9))
+default_L = custom_limit if custom_limit else (16 if '16' in box_limit_preset else (12 if '12' in box_limit_preset else (8 if '8' in box_limit_preset else 9)))
 is_dispatch = '1.B' in work_purpose
 is_mix_quarantine = '3.A' in mix_option
 initial_skus = [x.strip().upper() for x in re.split(r'[,/\s]+', new_items_input) if x.strip()]
+urgent_skus = [x.strip().upper() for x in re.split(r'[,/\s]+', urgent_input) if x.strip()]
 
 uploaded_files = st.file_uploader('📥 패킹리스트 엑셀 업로드 (다중 파일 지원)', type=['xlsx', 'xls'], accept_multiple_files=True)
 
@@ -117,7 +117,7 @@ def parse_all_excel(files):
                     row = df.iloc[r]
                     p_val = row.iloc[prod_col] if pd.notna(row.iloc[prod_col]) else ""
                     p_str = str(p_val).strip()
-                    if not p_str or any(k in p_str for k in ['합계', 'TOTAL', '合计', '小计']):
+                    if not p_str or any(k in p_str for k in ['합계', 'TOTAL', '合计', '小计', '총합']):
                         continue
                         
                     c_val = row.iloc[color_col] if pd.notna(row.iloc[color_col]) else "DEFAULT"
@@ -153,7 +153,7 @@ def parse_all_excel(files):
                                     'raw_title': p_str
                                 })
             else:
-                # Form 2: Style Workbook (시트명이 숫자인 형태)
+                # Form 2: Style Workbook (시트명이 숫자인 형태: 144, 145, 158 등)
                 is_style_workbook = all(str(s).strip().isdigit() for s in xl.sheet_names)
                 
                 if is_style_workbook:
@@ -244,7 +244,7 @@ def parse_all_excel(files):
                                 if any(k in val for k in ['컬러', '칼라', 'COLOR', '색상']): col_map['color'] = col_idx
                                 if any(k in val for k in ['사이즈', 'SIZE', '尺码']): col_map['size'] = col_idx
                                 if any(k in val for k in ['수량', 'QTY', '件数']): col_map['qty'] = col_idx
-                                if any(k in val for k in ['패킹', '박스번호', '箱号', 'CTN', 'CARTON']): col_map['pkg'] = col_idx
+                                if any(k in val for k in ['패킹', '박스번호', '箱号', 'CTN', 'CARTON', '패킹넘버']): col_map['pkg'] = col_idx
                             break
 
                     if format_type == 'MATRIX':
@@ -309,13 +309,14 @@ def parse_all_excel(files):
 
                     elif format_type == 'LIST':
                         cur_prod, cur_color = 'MUN_ITEM', 'DEFAULT'
-                        prev_pkg, empty_streak = None, 0
+                        cur_box = None
                         raw_prod_title = ""
 
                         for r in range(header_row_idx + 1, len(df)):
                             row = df.iloc[r]
                             row_str = ' '.join([str(v) for v in row.values if pd.notna(v)])
-                            if any(k in row_str for k in ['박스 총 수량', '옷 총 수량', '총합', '合计', '小计', 'TOTAL']): continue
+                            if any(k in row_str for k in ['박스 총 수량', '옷 총 수량', '총합', '合计', '小计', 'TOTAL']):
+                                continue
                                 
                             p_val = row.iloc[col_map['prod']] if 'prod' in col_map and col_map['prod'] < len(row.values) else None
                             c_val = row.iloc[col_map['color']] if 'color' in col_map and col_map['color'] < len(row.values) else None
@@ -323,26 +324,21 @@ def parse_all_excel(files):
                             q_val = row.iloc[col_map['qty']] if 'qty' in col_map and col_map['qty'] < len(row.values) else None
                             pkg_val = row.iloc[col_map['pkg']] if 'pkg' in col_map and col_map['pkg'] < len(row.values) else None
                             
-                            if not pd.notna(s_val) and not pd.notna(pkg_val) and not pd.notna(q_val):
-                                empty_streak += 1
-                                if empty_streak >= 3: break
-                                continue
-                            else: empty_streak = 0
-                            
                             if pd.notna(p_val) and str(p_val).strip().upper().startswith(('MUN', 'DJ')):
                                 match = re.search(r'(MUN|DJ)\s*\d+[A-Z0-9]*', str(p_val).strip().upper())
                                 if match: cur_prod = match.group(0).replace(' ', '')
                                 else: cur_prod = str(p_val).strip().upper()
                                 raw_prod_title = str(p_val).strip()
                                 
-                            if pd.notna(c_val) and not any(k in str(c_val) for k in ['총', '박스', '합', '合计']):
+                            if pd.notna(c_val) and str(c_val).strip() != '' and not any(k in str(c_val) for k in ['총', '박스', '합', '合计', 'TOTAL']):
                                 c_up = str(c_val).strip().upper()
-                                if re.match(r'^[A-Z\s]+$', c_up): cur_color = c_up
-                                else:
-                                    extracted = re.sub(r'[^A-Z\s]', '', c_up).strip()
-                                    if extracted: cur_color = extracted
+                                if not c_up.isdigit():
+                                    if re.match(r'^[A-Z\s]+$', c_up): cur_color = c_up
+                                    else:
+                                        extracted = re.sub(r'[^A-Z\s]', '', c_up).strip()
+                                        if extracted: cur_color = extracted
 
-                            if not pd.notna(q_val): continue
+                            if not pd.notna(q_val) or not pd.notna(s_val): continue
                                 
                             try:
                                 q_int = int(float(q_val))
@@ -350,29 +346,36 @@ def parse_all_excel(files):
                                 if q_int > 0 and sz in size_candidates:
                                     if pd.notna(pkg_val) and str(pkg_val).strip():
                                         pkg_str = str(pkg_val).strip()
-                                        if pkg_str == prev_pkg and all_boxes:
-                                            all_boxes[-1]['items'].append({'color': cur_color, 'size': sz, 'qty': q_int})
-                                        else:
-                                            all_boxes.append({'pkg': pkg_str, 'prod': cur_prod, 'items': [{'color': cur_color, 'size': sz, 'qty': q_int}], 'raw_title': raw_prod_title})
-                                        prev_pkg = pkg_str
+                                        cur_box = {
+                                            'pkg': pkg_str, 'prod': cur_prod, 'color': cur_color,
+                                            'items': [{'color': cur_color, 'size': sz, 'qty': q_int}],
+                                            'raw_title': raw_prod_title
+                                        }
+                                        all_boxes.append(cur_box)
                                     else:
-                                        if prev_pkg and all_boxes:
-                                            all_boxes[-1]['items'].append({'color': cur_color, 'size': sz, 'qty': q_int})
+                                        if cur_box is not None:
+                                            cur_box['items'].append({'color': cur_color, 'size': sz, 'qty': q_int})
                                         else:
                                             pkg_str = f'CTN-{len(all_boxes)+1}'
-                                            all_boxes.append({'pkg': pkg_str, 'prod': cur_prod, 'items': [{'color': cur_color, 'size': sz, 'qty': q_int}], 'raw_title': raw_prod_title})
-                                            prev_pkg = pkg_str
+                                            cur_box = {
+                                                'pkg': pkg_str, 'prod': cur_prod, 'color': cur_color,
+                                                'items': [{'color': cur_color, 'size': sz, 'qty': q_int}],
+                                                'raw_title': raw_prod_title
+                                            }
+                                            all_boxes.append(cur_box)
                             except: pass
         except Exception as e:
             st.error(f'파일 파싱 중 예외 발생: {e}')
 
     return all_boxes
 
-# 패딩 / 다운 품목 판별 함수
+# 품목별 지능형 L값 결정 함수 (패딩 L=12, 양홍코트 L=8, 표준 L=16)
 def get_item_L_limit(prod, raw_title, default_L):
     search_str = f"{prod} {raw_title}".upper()
     if '039' in search_str or '패딩' in search_str or '푸퍼' in search_str or '다운' in search_str:
         return min(default_L, 12)
+    if '154' in search_str or '155' in search_str or '코트' in search_str or '양홍' in search_str:
+        return min(default_L, 8)
     return default_L
 
 if uploaded_files:
@@ -391,7 +394,7 @@ if uploaded_files:
                 for it in b['items']:
                     qty_summary[(b['prod'], it['color'])][it['size']]['pcs'] += it['qty']
                 
-                # 다색 혼적(MIX) 박스 vs 단일컬러 박스
+                # 다색 혼적(MIX) 박스 vs 순수 단일컬러 박스
                 if len(colors) > 1:
                     mix_boxes.append(b)
                 else:
@@ -459,7 +462,7 @@ if uploaded_files:
                         sz_details = [f"{s}-{cnt}박스" for s, cnt in active_pure]
                         desc = ", ".join(sz_details)
                         if mix_cnt > 0:
-                            desc += f" + ★최상단 MIX {mix_cnt}박스 합적"
+                            desc = f"{desc} + ★최상단 MIX {mix_cnt}박스 합적" if desc else f"★최상단 MIX {mix_cnt}박스 합적"
                         pallets.append({
                             'p_num': f'P-{p_counter:02d}', 'prod': prod, 'color': color, 'size': 'ALL',
                             'boxes': tot_pure, 'desc': f'{tot_pure}박스: {desc}', 'type': 'ALL', 'is_full': (tot_pure == sku_L)
@@ -603,7 +606,7 @@ if uploaded_files:
             lines_kakao = []
             lines_kakao.append(f'[UNTAPPED 총괄 하역 오더 요약 ({work_purpose.split()[0]} / 동일 사이즈 비분할)]')
             lines_kakao.append(f'- 대상 화물: {len(all_skus)}개 품목 / 총 {tot_all_boxes}박스 ({tot_all_pcs:,}장 전수 일치)')
-            lines_kakao.append(f'- 적재 규격: 완P 한도 L={default_L}박스 기준 (패딩 감지 시 L=12 자동 적용)')
+            lines_kakao.append(f'- 적재 규격: 완P 한도 L={default_L}박스 기준 (패딩 L=12 / 코트 L=8 지능형 자동 적용)')
             lines_kakao.append(f'- 작업 모드: {work_purpose.split()[0]} | MIX 처리: {mix_option.split()[0]}')
             lines_kakao.append(f'- 총 파레트 수: 총 {len(pallets)}P')
             lines_kakao.append('=' * 80)
@@ -667,7 +670,7 @@ if uploaded_files:
             double_bottom_border = Border(top=Side(style='thin'), bottom=Side(style='double'), left=Side(style='thin'), right=Side(style='thin'))
 
             ws1.merge_cells("A3:E3")
-            ws1["A3"] = f"※ 작업 목적: [{work_purpose.split()[0]}] │ 적재 한도: [표준 L={default_L} / 패딩 L=12] │ MIX 방식: [{mix_option.split()[0]}] │ 동일 사이즈 쪼개기 까대기 원천 배제"
+            ws1["A3"] = f"※ 작업 목적: [{work_purpose.split()[0]}] │ 적재 한도: [표준 L={default_L} / 패딩 L=12 / 코트 L=8] │ MIX 방식: [{mix_option.split()[0]}] │ 동일 사이즈 쪼개기 까대기 원천 배제"
             ws1["A3"].font = Font(name="Malgun Gothic", size=10.5, bold=True)
             ws1["A3"].alignment = Alignment(horizontal="center", vertical="center")
             ws1.row_dimensions[3].height = 21.95
